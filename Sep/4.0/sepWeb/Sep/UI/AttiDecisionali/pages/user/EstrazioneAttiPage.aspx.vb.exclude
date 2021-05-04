@@ -1,0 +1,739 @@
+﻿#Region "NAMESPACES IMPORTATI"
+
+Imports System.Data
+Imports System.Data.SqlClient
+Imports Telerik.Web.UI
+
+#End Region
+
+Partial Class EstrazioneAttiPage
+    Inherits System.Web.UI.Page
+
+#Region "Dichiarazioni"
+
+    Private WithEvents MainPage As MainPage
+    Shared i As Integer
+    Shared Estratti As Integer
+    Shared Schedati As Integer
+    Shared iddocumento As Long
+    Shared PassoEstrazione As Integer
+    Shared FiltroSchede As Boolean
+
+#End Region
+
+#Region "PROPRIETA'"
+
+    Public Property Documenti() As List(Of ParsecAtt.Documento)
+        Get
+            Return CType(Session("EstrazioneAttiPage_Documenti"), List(Of ParsecAtt.Documento))
+        End Get
+        Set(ByVal value As List(Of ParsecAtt.Documento))
+            Session("EstrazioneAttiPage_Documenti") = value
+        End Set
+    End Property
+
+    Public Property Scheda() As ParsecAtt.SchedaControllo
+        Get
+            Return CType(Session("EstrazioneAttiPage_Scheda"), ParsecAtt.SchedaControllo)
+        End Get
+        Set(ByVal value As ParsecAtt.SchedaControllo)
+            Session("EstrazioneAttiPage_Scheda") = value
+        End Set
+    End Property
+
+#End Region
+
+#Region "EVENTI PAGINA"
+
+    Protected Sub Page_Init(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Init
+        Me.MainPage = CType(Me.Master, MainPage)
+        Me.MainPage.NomeModulo = "Atti Decisionali"
+        Me.MainPage.DescrizioneProcedura = "> Estrazione Atti"
+        If Not Me.Page.IsPostBack Then
+            i = 0
+            Estratti = 0
+            Schedati = 0
+            FiltroSchede = False
+            Me.Scheda = Nothing
+            Me.Documenti = New List(Of ParsecAtt.Documento)
+            Me.ResettaFiltro()
+            Me.TipologieDocumentoComboBox.Focus()
+            Me.SalvaButton.Attributes.Add("onclick", "HidePanel();hide=true;")
+            Me.ResettaSchedaButton.Attributes.Add("onclick", "HidePanel();hide=true;return false;")
+            Me.CaricaAnni()
+        End If
+        Me.CaricaTipologieDocumento()
+        Me.CaricaSettori()
+        Me.CaricaContenutiAtto()
+        Me.CaricaEsito()
+    End Sub
+
+    Protected Sub Page_PreRender(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.PreRender
+        Me.PannelloRisultatiLabel.Text = "Elenco Atti&nbsp;" & If(Me.Documenti.Count > 0, "( " & Me.Documenti.Count.ToString & " )", "")
+        Me.PannelloRisultatiLabel.Text &= If(Estratti > 0, "&nbsp; - " & Estratti & " -", "")
+        Me.PannelloRisultatiLabel.Text &= If(Schedati > 0, "&nbsp;" & Schedati, "")
+        'ParsecUtility.Utility.SaveScrollPosition(Me.scrollPanel, Me.scrollPosHidden, False)
+        'ConvalidaScheda()
+        Me.VisualizzaInvioEmail()
+    End Sub
+
+#End Region
+
+#Region "EVENTI CONTROLLI"
+
+    Protected Sub AnnullaFiltroImageButton_Click(ByVal sender As Object, ByVal e As System.Web.UI.ImageClickEventArgs) Handles AnnullaFiltroImageButton.Click
+        i = 0
+        Estratti = 0
+        Schedati = 0
+        Me.ResettaFiltro()
+    End Sub
+
+    Protected Sub FiltraImageButton_Click(ByVal sender As Object, ByVal e As System.Web.UI.ImageClickEventArgs) Handles FiltraImageButton.Click
+        Dim message As New StringBuilder
+        If Me.ConvalidaParametri(message) Then
+            Try
+                Me.InviaEmail.Visible = False
+                i = 0
+                Estratti = 0
+                Schedati = 0
+                FiltroSchede = False
+                Me.ApplicaFiltro()
+            Catch ex As Exception
+                ParsecUtility.Utility.MessageBox(ex.Message, False)
+            End Try
+        Else
+            ParsecUtility.Utility.MessageBox(message.ToString, False)
+        End If
+    End Sub
+
+    Protected Sub SettoreComboBox_SIC(sender As Object, e As Telerik.Web.UI.RadComboBoxSelectedIndexChangedEventArgs) Handles SettoreComboBox.SelectedIndexChanged
+        Me.EmailResponsabile.Text = ""
+        If Me.SettoreComboBox.SelectedIndex > 0 Then
+            Dim id As Integer = CInt(Me.SettoreComboBox.SelectedValue)
+            Dim sr As New ParsecAdmin.StructureRepository
+            Dim responsabile As ParsecAdmin.Struttura = sr.GetQuery.Where(Function(c) c.IdPadre = id And c.IdGerarchia = 400 And c.LogStato Is Nothing And c.Responsabile = True).FirstOrDefault
+            If Not responsabile Is Nothing Then Me.EmailResponsabile.Text = responsabile.Email
+            sr.Dispose()
+        End If
+    End Sub
+
+    Protected Sub ContenutoAttoComboBox_SIC(sender As Object, e As RadComboBoxSelectedIndexChangedEventArgs) Handles ContenutoAttoComboBox.SelectedIndexChanged
+        If Me.ContenutoAttoComboBox.SelectedIndex > 0 Then
+            Me.PercentualeTextBox.Text = (New ParsecAdmin.ContenutoAttoRepository).GetById(CInt(Me.ContenutoAttoComboBox.SelectedValue)).Percentuale
+            PassoEstrazione = Math.Round(100 / CInt(Me.PercentualeTextBox.Text))
+        End If
+    End Sub
+
+    Protected Sub AnnullaButton_Click(sender As Object, e As System.EventArgs) Handles AnnullaButton.Click
+        If Me.NumeroSchedaTB.Text.Length = 0 Then Me.NumeroSchedaTB.Text = String.Empty
+        If Me.AnnoSchedaTB.Text.Length = 0 Then Me.AnnoSchedaTB.Text = String.Empty
+        Me.ResettaScheda()
+    End Sub
+
+    Protected Sub SalvaButton_Click(sender As Object, e As System.EventArgs) Handles SalvaButton.Click
+        Me.Salva()
+    End Sub
+
+    Protected Sub StampaButton_Click(sender As Object, e As System.EventArgs) Handles StampaButton.Click
+        If Me.Scheda Is Nothing Then
+            ParsecUtility.Utility.MessageBox("Non è stata caricata nessuna scheda da stampare!", False)
+        ElseIf Me.NumeroSchedaTB.Text.Length = 0 Then
+            ParsecUtility.Utility.MessageBox("La scheda non possiede ancora il numero!", False)
+        Else
+            Me.StampaScheda(iddocumento)
+            'ParsecUtility.Utility.MessageBox("Da implementare il modello di stampa della scheda di controllo!", False)
+        End If
+    End Sub
+
+    Protected Sub ResettaFiltroButton_Click(sender As Object, e As System.EventArgs) Handles ResettaSchedaButton.Click
+        Me.Lbl_riferimento.Text = String.Empty
+        Me.NumeroSchedaTB.Text = String.Empty
+        Me.AnnoSchedaTB.Text = String.Empty
+        Me.ResettaScheda()
+    End Sub
+
+    Protected Sub FiltraSchedeImageButton_Click(ByVal sender As Object, ByVal e As System.Web.UI.ImageClickEventArgs) Handles FiltraSchedeImageButton.Click
+        Me.FiltraSchede()
+    End Sub
+
+    Protected Sub AnnullaFiltroSchedeImageButton_Click(ByVal sender As Object, ByVal e As System.Web.UI.ImageClickEventArgs) Handles AnnullaFiltroSchedeImageButton.Click
+        i = 0
+        Estratti = 0
+        Schedati = 0
+        FiltroSchede = False
+        Me.InviaEmail.Visible = False
+        Me.AnniComboBox.ClearSelection()
+        Me.EsitoRisComboBox.ClearSelection()
+        Me.TipologieDocumentoComboBox.SelectedIndex = 0
+        Me.SettoreComboBox.SelectedIndex = 0
+    End Sub
+
+    Protected Sub EsitoRisComboBox_SIC(sender As Object, e As RadComboBoxSelectedIndexChangedEventArgs) Handles EsitoRisComboBox.SelectedIndexChanged
+        'Me.FiltraSchede()
+        VisualizzaInvioEmail()
+    End Sub
+
+    Protected Sub InviaEmail_Click(sender As Object, e As System.Web.UI.ImageClickEventArgs) Handles InviaEmail.Click
+        If Valido() Then
+            Dim ee As New ParsecAtt.ElementiEmailDocumentoSchedato
+            Dim uC As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+            ee.mittente = uC.Email
+            ee.destinatario = Me.EmailResponsabile.Text
+            ee.Oggetto = "Comunicazione in merito al D.L. 174/2012 convertito dalla L. 213/2012"
+            Dim pageUrl As String = "~/UI/Protocollo/pages/user/InviaEmailRegistrazionePage.aspx"
+            Dim queryString As New Hashtable
+            queryString.Add("obj", "")
+            Dim parametriPagina As New Hashtable            
+            For Each dr As ParsecAtt.Documento In Me.Documenti            
+                ee.Corpo &= "La " & dr.DescrizioneTipologia & " N. " & dr.ContatoreGenerale & "/" & CDate(dr.DataDocumento).Year & " presenta esito: " & Me.EsitoRisComboBox.SelectedItem.Text & _
+                            " si prega di stampare e leggere la corrispondente scheda di controllo interno; || " & vbCrLf
+            Next
+            ee.Corpo &= "Firmato da " & uC.Titolo & " " & uC.Cognome.ToUpper & " " & uC.Nome
+            parametriPagina.Add("DocumentiSchedati", ee)
+            ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+            ParsecUtility.Utility.ShowPopup(pageUrl, 930, 600, queryString, False)
+        End If
+    End Sub
+
+    Protected Sub EspRicXls_Click(sender As Object, e As System.Web.UI.ImageClickEventArgs) Handles EspRicXls.Click
+        If Me.Documenti Is Nothing Then
+            ParsecUtility.Utility.MessageBox("Fase dell'esportazione dei documenti non possibile!", False)
+        Else
+            If Me.Documenti.Count > 0 Then
+                Dim pathExport As String = ConfigurationManager.AppSettings("PathExport")
+                If pathExport Is Nothing Then
+                    ParsecUtility.Utility.MessageBox("Cartella dell'export non configurata, contattare gli amministratori del sistema!", False)
+                    Exit Sub
+                Else
+                    If pathExport.Length = 0 Then
+                        ParsecUtility.Utility.MessageBox("Cartella dell'export non configurata, contattare gli amministratori del sistema!", False)
+                        Exit Sub
+                    Else
+                        If Not System.IO.Directory.Exists(pathExport) Then System.IO.Directory.CreateDirectory(pathExport)
+                    End If
+                End If
+                Dim uC As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+                Dim exportFilename As String = "Documenti_" & uC.Id.ToString & "_AL_" & String.Format("{0:dd_MM_yyyy}", Now) & ".xls"
+                Dim fullPathExport As String = pathExport & exportFilename
+                Dim swExport As New System.IO.StreamWriter(fullPathExport, False, System.Text.Encoding.Default)
+                HeaderFile(swExport)
+                For Each doc As ParsecAtt.Documento In Me.Documenti
+                    DetailFileDoc(swExport, doc)
+                Next
+                SaveStreamWriter(fullPathExport, exportFilename, swExport)
+            Else
+                ParsecUtility.Utility.MessageBox("Non ci sono Documenti, non si può esportare nulla!", False)
+            End If
+        End If
+    End Sub
+
+#End Region
+
+#Region "EVENTI DOCUMENTIGRIDVIEW"
+
+    Protected Sub DocumentiGridView_NDS(ByVal sender As Object, ByVal e As GridNeedDataSourceEventArgs) Handles DocumentiGridView.NeedDataSource
+        If Me.Documenti Is Nothing Then
+            Dim documenti As New ParsecAtt.DocumentoRepository
+            Dim filtro As ParsecAtt.FiltroDocumento = Me.GetFiltro
+            Me.Documenti = documenti.GetView(filtro)
+            documenti.Dispose()
+        End If
+        Me.DocumentiGridView.DataSource = Me.Documenti
+    End Sub
+
+    Protected Sub DocumentiGridView_Command(ByVal sender As Object, ByVal e As GridCommandEventArgs) Handles DocumentiGridView.ItemCommand
+        Select Case e.CommandName
+            Case "Select"
+                Me.SelezionaDocumento(e)
+            Case "Compile"
+                Me.Compila(e.Item)
+            Case "Print"
+                Me.StampaScheda(e.Item.OwnerTableView.DataKeyValues(e.Item.ItemIndex)("Id"))
+                'ParsecUtility.Utility.MessageBox("Da implementare il modello di stampa della scheda di controllo!", False)
+        End Select
+    End Sub
+
+    Protected Sub DocumentiGridView_Created(ByVal sender As Object, ByVal e As GridItemEventArgs) Handles DocumentiGridView.ItemCreated
+        If TypeOf e.Item Is GridHeaderItem Then
+            e.Item.Style.Add("position", "relative")
+            e.Item.Style.Add("top", "expression(this.offsetParent.scrollTop-2)")
+            e.Item.Style.Add("z-index", "99")
+            e.Item.Style.Add("background-color", "White")
+        End If
+    End Sub
+
+    Protected Sub DocumentiGridView_DataBound(ByVal sender As Object, ByVal e As GridItemEventArgs) Handles DocumentiGridView.ItemDataBound
+        Dim uC As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+        If TypeOf e.Item Is GridDataItem Then
+            Dim dataItem As GridDataItem = e.Item
+            Dim doc As ParsecAtt.Documento = CType(e.Item.DataItem, ParsecAtt.Documento)
+            i += 1
+            If Not FiltroSchede Then
+                If TypeOf dataItem("Select").Controls(0) Is ImageButton And _
+               TypeOf dataItem("Compile").Controls(0) Is ImageButton And _
+               TypeOf dataItem("Print").Controls(0) Is ImageButton Then
+                    Dim btnsel = CType(dataItem("Select").Controls(0), ImageButton)
+                    Dim btncmp = CType(dataItem("Compile").Controls(0), ImageButton)
+                    If i = PassoEstrazione Then
+                        i = 0
+                        Estratti += 1
+                        Dim sr As New ParsecAdmin.StructureRepository
+                        Dim segretario As ParsecAdmin.Struttura = sr.GetQuery.Where(Function(c) c.IDUtente = uC.Id And c.IdGerarchia = 400 And c.LogStato Is Nothing And c.Responsabile = True And c.Qualifica = 13).FirstOrDefault()
+                        sr.Dispose()
+                        If segretario Is Nothing Then
+                            btncmp.ImageUrl = "~\images\blank.gif"
+                            btncmp.ToolTip = "Solo il Segretario può compilare la scheda!"
+                            btncmp.Enabled = False
+                        End If
+                    Else
+                        btnsel.ImageUrl = "~\images\blank.gif"
+                        btnsel.ToolTip = "Non fa parte del campione estratto!" & vbCrLf & "Non si può visualizzare!"
+                        btnsel.Enabled = False
+                        btncmp.ImageUrl = "~\images\blank.gif"
+                        btncmp.ToolTip = "Non fa parte del campione estratto!" & vbCrLf & "Non si può compilare la scheda!"
+                        btncmp.Enabled = False
+                    End If
+                    Dim btnprn = CType(dataItem("Print").Controls(0), ImageButton)
+                    Dim scheda As ParsecAtt.SchedaControllo = (New ParsecAtt.SchedaControlloRepository).GetQuery.Where(Function(c) c.IdDocumento = doc.Id).FirstOrDefault
+                    If scheda Is Nothing Then
+                        btnprn.ImageUrl = "~\images\blank.gif"
+                        btnprn.Enabled = False
+                    Else
+                        Schedati += 1
+                        If btnprn.Enabled Then btnprn.ToolTip = "Stampa la scheda di controllo N. " & scheda.Numero & "/" & scheda.Anno
+                    End If
+                End If
+            Else
+                Estratti += 1
+                Schedati += 1
+            End If
+        End If
+    End Sub
+
+    Private Sub SelezionaDocumento(ByVal e As GridCommandEventArgs)
+        Dim id As Integer = e.Item.OwnerTableView.DataKeyValues(e.Item.ItemIndex)("Id")
+        Dim documenti As New ParsecAtt.DocumentoRepository
+        Dim documento As ParsecAtt.Documento = documenti.GetQuery.Where(Function(c) c.Id = id).FirstOrDefault
+        If Not documento Is Nothing Then
+            Dim queryString As New Hashtable
+            queryString.Add("Tipo", documento.IdTipologiaDocumento)
+            queryString.Add("Mode", "View")
+            queryString.Add("Procedura", "10")
+            Dim pageUrl As String = "~/UI/AttiDecisionali/pages/user/AttoAmministrativoPage.aspx"
+            Dim parametriPagina As New Hashtable
+            parametriPagina.Add("IdDocumentoIter", id)
+            ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+            ParsecUtility.Utility.ShowPopup(pageUrl, 930, 650, queryString, False)
+        End If
+        documenti.Dispose()
+    End Sub
+
+    Private Sub Compila(ByVal item As GridDataItem)
+        Dim id As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+        iddocumento = id
+        Dim scr As New ParsecAtt.SchedaControlloRepository
+        Me.Lbl_riferimento.Text = String.Empty
+        Me.NumeroSchedaTB.Text = String.Empty
+        Me.AnnoSchedaTB.Text = String.Empty
+        Me.ResettaScheda()
+        If Not IsNothing(scr.GetQuery.Where(Function(c) c.IdDocumento = id).FirstOrDefault) Then
+            Dim scheda As ParsecAtt.SchedaControllo = scr.GetByIdDocumento(id)
+            AggiornaVista(scheda)
+        Else
+            Dim doc As ParsecAtt.Documento = (New ParsecAtt.DocumentoRepository).GetById(id)
+            With doc
+                Me.Lbl_riferimento.Text = String.Format("{0} N. {1}/{2} - Settore : {3} - Oggetto : {4}", .DescrizioneTipologia, .ContatoreGenerale, .DataDocumento.Value.Year.ToString, .DescrizioneSettore, .Oggetto)
+            End With
+            Me.Lbl_tipologia.Text = Me.ContenutoAttoComboBox.SelectedItem.Text
+        End If
+        scr.Dispose()
+        Dim sb As New StringBuilder
+        With sb
+            .AppendLine("<script>")
+            .AppendLine("ShowPanel();hide=false;")
+            .AppendLine("</script>")
+        End With
+        ParsecUtility.Utility.RegisterScript(sb, False)
+    End Sub
+
+#End Region
+
+#Region "METODI PRIVATI"
+
+    Private Sub AggiornaVista(ByVal sc As ParsecAtt.SchedaControllo)
+        With sc
+            Me.NormeComboBox.FindItemByValue(CInt(.Norme)).Selected = True
+            Me.NumeroSchedaTB.Text = .Numero
+            Me.AnnoSchedaTB.Text = .Anno
+            iddocumento = .IdDocumento
+            Dim doc As ParsecAtt.Documento = (New ParsecAtt.DocumentoRepository).GetById(iddocumento)
+            With doc
+                Me.Lbl_riferimento.Text = String.Format("{0} N. {1}/{2} - Settore : {3} - Oggetto : {4}" & vbCrLf & "Macro-Tipologia : {5}", .DescrizioneTipologia, .ContatoreGenerale, .DataDocumento.Value.Year.ToString, .DescrizioneSettore, .Oggetto, "") '.DescrizioneContenuto)
+            End With
+            Me.CompetenzaComboBox.FindItemByValue(CInt(.Competenza)).Selected = True
+            Me.Pressuposti1ComboBox.FindItemByValue(CInt(.Pressuposti1)).Selected = True
+            Me.Pressuposti2ComboBox.FindItemByValue(CInt(.Pressuposti2)).Selected = True
+            Me.Pressuposti3ComboBox.FindItemByValue(CInt(.Pressuposti3)).Selected = True
+            Me.Procedimento1ComboBox.FindItemByValue(CInt(.Procedimento1)).Selected = True
+            Me.Procedimento2ComboBox.FindItemByValue(CInt(.Procedimento2)).Selected = True
+            Me.Procedimento3ComboBox.FindItemByValue(CInt(.Procedimento3)).Selected = True
+            Me.Procedimento4ComboBox.FindItemByValue(CInt(.Procedimento4)).Selected = True
+            Me.Procedimento5ComboBox.FindItemByValue(CInt(.Procedimento5)).Selected = True
+            Me.Interessi1ComboBox.FindItemByValue(CInt(.Interessi1)).Selected = True
+            Me.Interessi2ComboBox.FindItemByValue(CInt(.Interessi2)).Selected = True
+            Me.Interessi3ComboBox.FindItemByValue(CInt(.Interessi3)).Selected = True
+            Me.Interessi4ComboBox.FindItemByValue(CInt(.Interessi4)).Selected = True
+            Me.Motivazione1ComboBox.FindItemByValue(CInt(.Motivazione1)).Selected = True
+            Me.Motivazione2ComboBox.FindItemByValue(CInt(.Motivazione2)).Selected = True
+            Me.Motivazione3ComboBox.FindItemByValue(CInt(.Motivazione3)).Selected = True
+            Me.Motivazione4ComboBox.FindItemByValue(CInt(.Motivazione4)).Selected = True
+            Me.Dispositivo1ComboBox.FindItemByValue(CInt(.Dispositivo1)).Selected = True
+            Me.Dispositivo2ComboBox.FindItemByValue(CInt(.Dispositivo2)).Selected = True
+            Me.Dispositivo3ComboBox.FindItemByValue(CInt(.Dispositivo3)).Selected = True
+            Me.Dispositivo4ComboBox.FindItemByValue(CInt(.Dispositivo4)).Selected = True
+            Me.Forma1ComboBox.FindItemByValue(CInt(.Forma)).Selected = True
+            Me.Linguaggio1ComboBox.FindItemByValue(CInt(.Linguaggio)).Selected = True
+            Me.EsitoComboBox.FindItemByValue(CInt(.Esito)).Selected = True
+            Me.RilieviTextBox.Text = .Rilievi
+        End With
+        Me.Scheda = sc
+    End Sub
+
+    Private Sub ApplicaFiltro()
+        Dim filtro As ParsecAtt.FiltroDocumento = Me.GetFiltro
+        Dim documenti As New ParsecAtt.DocumentoRepository
+        Me.Documenti = documenti.GetView(filtro)
+        'If Me.Documenti.Count = 0 Then Throw New ApplicationException("Nessun atto amministrativo trovato con i criteri di filtro impostati!")
+        Me.DocumentiGridView.DataSource = Me.Documenti
+        Me.DocumentiGridView.DataBind()
+        documenti.Dispose()
+    End Sub
+
+    Private Sub ApplicaFiltroSchede()
+        Dim filtro As ParsecAtt.FiltroScheda = Me.GetFiltroSchede
+        Dim schede As New ParsecAtt.SchedaControlloRepository
+        Me.Documenti = schede.GetDocumenti(filtro)
+        'If Me.Documenti.Count = 0 Then Throw New ApplicationException("Nessun atto amministrativo schedato trovato con i criteri di filtro impostati!")
+        Me.DocumentiGridView.DataSource = Me.Documenti
+        Me.DocumentiGridView.DataBind()
+        schede.Dispose()
+    End Sub
+
+    Private Sub CaricaAnni()
+        Dim Anni As New List(Of Integer)
+        'inizio della gestione delle schede di controllo
+        For i As Integer = 2015 To Now.Year
+            Anni.Add(i)
+        Next
+        Me.AnniComboBox.DataSource = Anni
+        Me.AnniComboBox.DataBind()
+    End Sub
+
+    Private Sub CaricaContenutiAtto()
+        Dim ca As New ParsecAdmin.ContenutoAttoRepository
+        With Me.ContenutoAttoComboBox
+            .DataValueField = "Id"
+            .DataTextField = "Descrizione"
+            .DataSource = ca.GetQuery.Where(Function(c) c.Abilitato = True).OrderBy(Function(o) o.Descrizione)
+            .DataBind()
+            .Items.Insert(0, New RadComboBoxItem("- Seleziona Contenuto Atto -", -1))
+            .SelectedIndex = 0
+        End With
+        ca.Dispose()
+    End Sub
+
+    Private Sub CaricaEsito()
+        Dim sr As New ParsecAdmin.StructureRepository
+        With Me.EsitoRisComboBox
+            .DataValueField = "Id"
+            .DataTextField = "Descrizione"
+            .Items.Insert(0, New RadComboBoxItem("- Seleziona Esito Scheda -", -1))
+            .Items.Insert(1, New RadComboBoxItem("Positivo senza rilievi", 0))
+            .Items.Insert(2, New RadComboBoxItem("Positivo con rilievi", 1))
+            .Items.Insert(3, New RadComboBoxItem("Negativo con rilievi", 2))
+            .SelectedIndex = 0
+        End With
+        sr.Dispose()
+    End Sub
+
+    Private Sub CaricaSettori()
+        Dim sr As New ParsecAdmin.StructureRepository
+        With Me.SettoreComboBox
+            .DataValueField = "Id"
+            .DataTextField = "Descrizione"
+            .DataSource = sr.GetQuery.Where(Function(c) c.IdGerarchia = 100 And c.LogStato Is Nothing).OrderBy(Function(o) o.Descrizione)
+            .DataBind()
+            .Items.Insert(0, New RadComboBoxItem("- Seleziona Area/Settore Atto -", -1))
+            .SelectedIndex = 0
+        End With
+        sr.Dispose()
+    End Sub
+
+    Private Sub CaricaTipologieDocumento()
+        Dim tipologie As New ParsecAtt.TipologieDocumentoRepository
+        With Me.TipologieDocumentoComboBox
+            .DataValueField = "Id"
+            .DataTextField = "Descrizione"
+            .DataSource = tipologie.GetKeyValue(New ParsecAtt.FiltroTipologiaDocumento With {.Modellizzabile = True}).Where(Function(c) Not c.Descrizione.StartsWith("Proposta"))
+            .DataBind()
+            .Items.Insert(0, New RadComboBoxItem("- Seleziona Tipo Atto -", -1))
+            .SelectedIndex = 0
+        End With
+        tipologie.Dispose()
+    End Sub
+
+    Private Function ConvalidaParametri(ByVal msg As StringBuilder) As Boolean
+        If Me.TipologieDocumentoComboBox.SelectedIndex = 0 Then msg.AppendLine("E' obbligatorio selezionare una tipologia di documento!")
+        If Me.DataDocumentoInizioTextBox.SelectedDate.HasValue AndAlso Me.DataDocumentoFineTextBox.SelectedDate.HasValue Then
+            If Date.Compare(Me.DataDocumentoInizioTextBox.SelectedDate, Me.DataDocumentoFineTextBox.SelectedDate) > 0 Then
+                msg.AppendLine("Il campo 'Data Documento da' deve essere antecedente o uguale al campo 'Data Documento a'!")
+            End If
+            If Date.Compare(Me.DataDocumentoInizioTextBox.SelectedDate, Now) > 0 Then msg.AppendLine("Il campo 'Data Documento da' deve essere antecedente ad oggi!")
+            If Date.Compare(Me.DataDocumentoFineTextBox.SelectedDate, Now) > 0 Then msg.AppendLine("Il campo 'Data Documento a' deve essere antecedente ad oggi!")
+        End If
+        If Me.ContenutoAttoComboBox.SelectedIndex = 0 Then msg.AppendLine("E' obbligatorio scegliere la macro-tipologia (contenuto) dell'atto!")
+        If Me.SettoreComboBox.SelectedIndex = 0 Then msg.AppendLine("E' obbligatorio specificare il campo 'Area-Settore' dell'atto!")
+        Return Not msg.Length > 0
+    End Function
+
+    Private Sub ConvalidaScheda()
+        'Da sistemare, aspettare richiesta cliente
+        If Me.EsitoComboBox.SelectedValue <> "0" And Me.RilieviTextBox.Text.Trim.Length = 0 Then
+            Me.SalvaButton.Attributes.Add("onclick", "HidePanel();hide=false;")
+            Me.SalvaButton.Enabled = False
+            Me.StampaButton.Enabled = False
+            ParsecUtility.Utility.MessageBox("E' obbligatorio specificare i rilievi se l'esito è con rilievi!", False)
+        Else
+            Me.SalvaButton.Attributes.Add("onclick", "HidePanel();hide=true;")
+            Me.SalvaButton.Enabled = True
+            Me.StampaButton.Enabled = True
+        End If
+        Me.StampaButton.Enabled = Me.SalvaButton.Enabled
+    End Sub
+
+    Private Function GetFiltro() As ParsecAtt.FiltroDocumento
+        Dim filtro As New ParsecAtt.FiltroDocumento
+        With filtro
+            .DataDocumentoInizio = Me.DataDocumentoInizioTextBox.SelectedDate
+            .DataDocumentoFine = Me.DataDocumentoFineTextBox.SelectedDate
+            If Me.TipologieDocumentoComboBox.SelectedIndex > 0 Then .IdTipologiaDocumento = CInt(Me.TipologieDocumentoComboBox.SelectedValue)
+            If Me.SettoreComboBox.SelectedIndex > 0 Then .IdSettore = CInt(Me.SettoreComboBox.SelectedValue)
+            .ApplicaAbilitazione = True
+        End With
+        Return filtro
+    End Function
+
+    Private Function GetFiltroSchede() As ParsecAtt.FiltroScheda
+        Dim filtro As New ParsecAtt.FiltroScheda
+        With filtro
+            .Anno = CInt(Me.AnniComboBox.SelectedValue)
+            If Me.TipologieDocumentoComboBox.SelectedIndex > 0 Then .IdTipologiaDocumento = CInt(Me.TipologieDocumentoComboBox.SelectedValue)
+            If Me.SettoreComboBox.SelectedIndex > 0 Then .IdSettore = CInt(Me.SettoreComboBox.SelectedValue)
+            If Me.EsitoRisComboBox.SelectedIndex > 0 Then .IdEsito = CInt(Me.EsitoRisComboBox.SelectedValue)
+        End With
+        Return filtro
+    End Function
+
+    Private Sub FiltraSchede()
+        Try
+            i = 0
+            Estratti = 0
+            Schedati = 0
+            FiltroSchede = True
+            Me.ApplicaFiltroSchede()
+        Catch ex As Exception
+            ParsecUtility.Utility.MessageBox(ex.Message, False)
+        End Try
+    End Sub
+
+    Private Sub ResettaFiltro()
+        Me.DataDocumentoInizioTextBox.SelectedDate = New Date((Now.Year - 1), 1, 1)
+        Me.DataDocumentoFineTextBox.SelectedDate = New Date((Now.Year - 1), 12, 31)
+        Me.SettoreComboBox.SelectedIndex = 0
+        Me.TipologieDocumentoComboBox.SelectedIndex = 0
+        Me.ContenutoAttoComboBox.SelectedIndex = 0
+    End Sub
+
+    Private Sub ResettaScheda()
+        iddocumento = 0
+        Me.NormeComboBox.SelectedIndex = 0
+        Me.CompetenzaComboBox.SelectedIndex = 0
+        Me.Pressuposti1ComboBox.SelectedIndex = 0
+        Me.Pressuposti2ComboBox.SelectedIndex = 0
+        Me.Pressuposti3ComboBox.SelectedIndex = 0
+        Me.Procedimento1ComboBox.SelectedIndex = 0
+        Me.Procedimento2ComboBox.SelectedIndex = 0
+        Me.Procedimento3ComboBox.SelectedIndex = 0
+        Me.Procedimento4ComboBox.SelectedIndex = 0
+        Me.Procedimento5ComboBox.SelectedIndex = 0
+        Me.Interessi1ComboBox.SelectedIndex = 0
+        Me.Interessi2ComboBox.SelectedIndex = 0
+        Me.Interessi3ComboBox.SelectedIndex = 0
+        Me.Interessi4ComboBox.SelectedIndex = 0
+        Me.Motivazione2ComboBox.SelectedIndex = 0
+        Me.Motivazione3ComboBox.SelectedIndex = 0
+        Me.Motivazione4ComboBox.SelectedIndex = 0
+        Me.Dispositivo1ComboBox.SelectedIndex = 0
+        Me.Dispositivo2ComboBox.SelectedIndex = 0
+        Me.Dispositivo3ComboBox.SelectedIndex = 0
+        Me.Dispositivo4ComboBox.SelectedIndex = 0
+        Me.Forma1ComboBox.SelectedIndex = 0
+        Me.Linguaggio1ComboBox.SelectedIndex = 0
+        Me.EsitoComboBox.SelectedIndex = 0
+        Me.RilieviTextBox.Text = String.Empty
+    End Sub
+
+    Private Sub Salva()
+        Dim uC As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+        Dim schede As New ParsecAtt.SchedaControlloRepository
+        Dim scheda As ParsecAtt.SchedaControllo = schede.CreateFromInstance(Me.Scheda)
+        With scheda
+            .IdUtente = uC.Id
+            .DataOraRegistrazione = Now
+            If Me.NumeroSchedaTB.Text.Length > 0 Then .Numero = CInt(Me.NumeroSchedaTB.Text)
+            If Me.AnnoSchedaTB.Text.Length > 0 Then .Anno = CInt(Me.AnnoSchedaTB.Text)
+            .IdDocumento = iddocumento
+            .Norme = CInt(Me.NormeComboBox.SelectedValue)
+            .Competenza = CInt(Me.CompetenzaComboBox.SelectedValue)
+            .Pressuposti1 = CInt(Me.Pressuposti1ComboBox.SelectedValue)
+            .Pressuposti2 = CInt(Pressuposti2ComboBox.SelectedValue)
+            .Pressuposti3 = CInt(Me.Pressuposti3ComboBox.SelectedValue)
+            .Procedimento1 = CInt(Me.Procedimento1ComboBox.SelectedValue)
+            .Procedimento2 = CInt(Me.Procedimento2ComboBox.SelectedValue)
+            .Procedimento3 = CInt(Me.Procedimento3ComboBox.SelectedValue)
+            .Procedimento4 = CInt(Me.Procedimento4ComboBox.SelectedValue)
+            .Procedimento5 = CInt(Me.Procedimento5ComboBox.SelectedValue)
+            .Interessi1 = CInt(Me.Interessi1ComboBox.SelectedValue)
+            .Interessi2 = CInt(Me.Interessi2ComboBox.SelectedValue)
+            .Interessi3 = CInt(Me.Interessi3ComboBox.SelectedValue)
+            .Interessi4 = CInt(Me.Interessi4ComboBox.SelectedValue)
+            .Motivazione1 = CInt(Me.Motivazione1ComboBox.SelectedValue)
+            .Motivazione2 = CInt(Me.Motivazione2ComboBox.SelectedValue)
+            .Motivazione3 = CInt(Me.Motivazione3ComboBox.SelectedValue)
+            .Motivazione4 = CInt(Me.Motivazione4ComboBox.SelectedValue)
+            .Dispositivo1 = CInt(Me.Dispositivo1ComboBox.SelectedValue)
+            .Dispositivo2 = CInt(Me.Dispositivo2ComboBox.SelectedValue)
+            .Dispositivo3 = CInt(Me.Dispositivo3ComboBox.SelectedValue)
+            .Dispositivo4 = CInt(Me.Dispositivo4ComboBox.SelectedValue)
+            .Forma = CInt(Me.Forma1ComboBox.SelectedValue)
+            .Linguaggio = CInt(Me.Linguaggio1ComboBox.SelectedValue)
+            .Esito = CInt(Me.EsitoComboBox.SelectedValue)
+            .Rilievi = Me.RilieviTextBox.Text.Trim
+        End With
+        Try
+            schede.Save(scheda)
+            Me.Scheda = schede.Scheda
+            ParsecUtility.Utility.MessageBox("Scheda di controllo N. " & schede.Scheda.Numero & " / " & schede.Scheda.Anno & " SALVATA!", False)
+            i = 0
+            Estratti = 0
+            Schedati = 0
+            iddocumento = 0
+            Me.DocumentiGridView.Rebind()
+        Catch ex As Exception
+            ParsecUtility.Utility.MessageBox("Scheda di controllo N. " & schede.Scheda.Numero & " / " & schede.Scheda.Anno & " NON SI E' POTUTA SALVARE!" & vbCrLf & ex.Message, False)
+        Finally
+            Me.Scheda = Nothing
+            schede.Dispose()
+        End Try
+    End Sub
+
+    Private Sub StampaScheda(ByVal id As Long)
+        Dim schede As New ParsecAtt.SchedaControlloRepository
+        Dim parametriStampa As New Hashtable
+        parametriStampa.Add("TipologiaStampa", "StampaSchedaControllo")
+        Dim sch = schede.GetSchedaPerStampa(id)
+        parametriStampa.Add("DatiStampa", sch)
+        Session("ParametriStampa") = parametriStampa
+        Dim pageUrl As String = "~/UI/AttiDecisionali/pages/user/StampaPage.aspx"
+        ParsecUtility.Utility.ShowPopup(pageUrl, 800, 600, Nothing, False)
+        schede.Dispose()
+    End Sub
+
+    Private Function Valido() As Boolean
+        If Me.SettoreComboBox.SelectedIndex = 0 Then
+            ParsecUtility.Utility.MessageBox("Non è stata specificata l'Area/Settore!" & vbCrLf & "Non si può inviare nessuna e-mail perchè non è stato individuato il responsabile!", False)
+            Return False
+        End If
+        If Me.EmailResponsabile.Text.Length = 0 Then
+            ParsecUtility.Utility.MessageBox("Il Responsabile dell'Area/Settore specificata non possiede e-mail!" & vbCrLf & "Non si può inviare nessuna e-mail per assenza d'indirizzo!", False)
+            Return False
+        End If
+        Dim uC As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+        If uC.Email Is Nothing Or uC.Email.ToString.Length < 2 Then
+            ParsecUtility.Utility.MessageBox("L'utente collegato non possiede e-mail!" & vbCrLf & "Non si può inviare nessuna e-mail per assenza d'indirizzo!", False)
+            Return False
+        End If
+        Return True
+    End Function
+
+    Private Sub VisualizzaInvioEmail()
+        Dim uC As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+        Dim sr As New ParsecAdmin.StructureRepository
+        Dim segretario As ParsecAdmin.Struttura = sr.GetQuery.Where(Function(c) c.IDUtente = uC.Id And c.IdGerarchia = 400 And c.LogStato Is Nothing And c.Responsabile = True And c.Qualifica = 13).FirstOrDefault()
+        sr.Dispose()
+        If segretario Is Nothing Then
+            If Me.Documenti.Count > 0 Then
+                If Me.EsitoRisComboBox.SelectedValue = "1" Or Me.EsitoRisComboBox.SelectedValue = "2" Then
+                    Me.InviaEmail.Visible = True
+                Else
+                    Me.InviaEmail.Visible = False
+                End If
+            Else
+                Me.InviaEmail.Visible = False
+            End If
+        Else
+            Me.InviaEmail.Visible = False
+        End If
+    End Sub
+
+#Region "Esportazione excel"
+
+    Private Sub HeaderFile(ByRef sw As System.IO.StreamWriter)
+        Dim line As String = String.Empty
+        Dim titolo As String = "Filtro : " & vbTab
+        If Me.TipologieDocumentoComboBox.SelectedIndex > 0 Then titolo &= Me.TipologieDocumentoComboBox.SelectedItem.Text & vbTab
+        If Me.DataDocumentoInizioTextBox.SelectedDate.HasValue Then titolo &= Me.DataDocumentoInizioTextBox.SelectedDate & vbTab
+        If Me.DataDocumentoFineTextBox.SelectedDate.HasValue Then titolo &= Me.DataDocumentoFineTextBox.SelectedDate & vbTab
+        If Me.SettoreComboBox.SelectedIndex > 0 Then titolo &= Me.SettoreComboBox.SelectedItem.Text & vbTab
+        If Me.ContenutoAttoComboBox.SelectedIndex > 0 Then titolo &= Me.ContenutoAttoComboBox.SelectedItem.Text & vbTab
+        titolo &= Me.AnniComboBox.SelectedItem.Text & vbTab
+        If Me.EsitoRisComboBox.SelectedIndex > 0 Then titolo &= Me.EsitoRisComboBox.SelectedItem.Text
+        line &= titolo & vbCrLf
+        line &= "Numero" & vbTab & "Tipo" & vbTab & "Data" & vbTab & "Oggetto" & vbTab & "Settore"
+        sw.WriteLine(line)
+    End Sub
+
+    Private Sub DetailFileDoc(ByRef sw As System.IO.StreamWriter, ByVal doc As ParsecAtt.Documento)
+        Dim line As String = ""
+        With doc
+            line &= .ContatoreGenerale & vbTab & _
+                    .DescrizioneTipologia & vbTab & _
+                     String.Format("{0:dd/MM/yyyy}", .DataDocumento) & vbTab & _
+                    .Oggetto & vbTab & _
+                    .DescrizioneSettore
+        End With
+        sw.WriteLine(line)
+    End Sub
+
+    Private Sub SaveStreamWriter(ByVal path As String, ByVal nf As String, ByRef sw As System.IO.StreamWriter)
+        sw.Close()
+        Session("AttachmentFullName") = path
+        Dim pageUrl As String = "~/UI/Amministrazione/pages/user/ExportExcelPage.aspx"
+        ParsecUtility.Utility.PageReload(pageUrl, False)
+        Dim esportazioniExcel As New ParsecAdmin.ExportExcelRepository
+        Dim exportExcel As ParsecAdmin.ExportExcel = esportazioniExcel.CreateFromInstance(Nothing)
+        Dim uC As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+        With exportExcel
+            .NomeFile = nf
+            .Oggetto = "Elenco Documenti"
+            .Utente = uC.Username
+            .Data = Now
+        End With
+        esportazioniExcel.Save(exportExcel)
+    End Sub
+
+#End Region
+
+#End Region
+
+End Class

@@ -1,0 +1,700 @@
+﻿<%@ Page Language="VB" MasterPageFile="~/MainPage.master" AutoEventWireup="false"
+    CodeFile="ConservazioneAttiAmministrativiPage.aspx.vb" Inherits="ConservazioneAttiAmministrativiPage" %>
+
+<%@ Register Assembly="Telerik.Web.UI" Namespace="Telerik.Web.UI" TagPrefix="telerik" %>
+<asp:Content ID="Content1" ContentPlaceHolderID="MainContent" runat="Server">
+
+    <script type="text/javascript">
+
+        var _backgroundElement = document.createElement("div");
+        var overlay = document.createElement("div");
+
+
+        var hide = true;
+
+
+        function pageLoad() {
+            var manager = Sys.WebForms.PageRequestManager.getInstance();
+            manager.add_beginRequest(OnBeginRequest);
+            manager.add_endRequest(OnEndRequest);
+            $get("pageContent").appendChild(_backgroundElement);
+            $get("pageContent").appendChild(overlay);
+
+
+        }
+        function OnBeginRequest(sender, args) {
+            EnableUI(false);
+        }
+
+
+
+        function OnEndRequest(sender, args) {
+            count = 2;
+            var message = $get('<%= infoOperazioneHidden.ClientId %>').value;
+
+            if (message !== '') {
+
+                //VISUALIZZO IL MESSAGGIO
+
+                ShowMessageBox(message);
+
+                var intervallo = setInterval(function () {
+                    count = count - 1;
+                    if (count <= 0) {
+                        HideMessageBox();
+                        EnableUI(true);
+                        clearInterval(intervallo);
+
+                    }
+                }, 1000);
+
+
+
+                $get('<%= infoOperazioneHidden.ClientId %>').value = '';
+
+            } else { EnableUI(true); }
+        }
+
+
+
+        function ShowMessageBox(message) {
+
+
+            overlay.style.display = '';
+            overlay.style.position = 'absolute';
+            overlay.style.left = '0px';
+            overlay.style.top = '0px';
+            overlay.style.width = '100%';
+            overlay.style.height = '100%';
+            overlay.style.zIndex = 10000;
+            overlay.style.backgroundColor = '#09718F';
+            overlay.style.filter = "alpha(opacity=20)";
+            overlay.style.opacity = "0.2";
+
+            var messageBoxPanel = document.getElementById("messageBoxPanel");
+
+
+            with (messageBoxPanel) {
+                style.display = '';
+            }
+
+            var messageBox = document.getElementById("messageBox");
+
+            with (messageBox) {
+                style.width = '300px';
+                style.height = '40px';
+                style.backgroundColor = '#BFDBFF';
+                style.border = 'solid #4892FF 2px';
+                innerHTML = message;
+                style.color = '#00156E';
+                style.backgroundImage = 'url(/sep/Images/success.png)';
+                style.backgroundPosition = '10px center';
+                style.backgroundRepeat = 'no-repeat';
+                style.padding = '15px 10px 15px 50px';
+                style.margin = '15px 0px';
+
+            }
+
+        }
+
+
+        function HideMessageBox() {
+            try {
+                var messageBoxPanel = document.getElementById("messageBoxPanel");
+                messageBoxPanel.style.display = 'none';
+                overlay.style.display = 'none';
+            }
+            catch (e) { }
+        }
+
+
+        function EnableUI(state) {
+            if (!state) {
+                _backgroundElement.style.display = '';
+                _backgroundElement.style.position = 'absolute';
+                _backgroundElement.style.left = '0px';
+                _backgroundElement.style.top = '0px';
+
+                _backgroundElement.style.width = '100%';
+                _backgroundElement.style.height = '100%';
+
+                _backgroundElement.style.zIndex = 10000;
+                // _backgroundElement.className = "modalBackground";
+                _backgroundElement.style.backgroundColor = '#09718F';
+                _backgroundElement.style.filter = "alpha(opacity=20)";
+                _backgroundElement.style.opacity = "0.2";
+            }
+            else {
+                _backgroundElement.style.display = 'none';
+
+            }
+        }
+
+
+        function updating(sender, args) {
+            var d = $get("progressBar");
+            d.style.display = '';
+            if (args.get_progressData() && args.get_progressData().OperationComplete == 'true') {
+                args.set_cancel(true);
+                d.style.display = 'none';
+            }
+        }
+
+
+    </script>
+    <script type="text/javascript">
+
+        var DataItems;
+
+
+        function CheckItem(itemCheckBox) {
+            var masterTableView = $find("<%= DocumentiGridView.ClientID %>").get_masterTableView();
+
+            if (DataItems == null) {
+                DataItems = masterTableView.get_dataItems();
+            }
+            var row = itemCheckBox.parentNode.parentNode;
+            if (row.tagName === "TR" && row.id != "") {
+                var item = $find(row.id);
+                if (item) {
+                    if (!item.get_selected() && itemCheckBox.checked) {
+                        //masterTableView.clearSelectedItems();
+                        item.set_selected(true);
+                    }
+                }
+
+            }
+        }
+
+
+        function Check(id) {
+
+            var masterTable = $find("<%= DocumentiGridView.ClientID %>").get_masterTableView();
+            var row = masterTable.get_dataItems();
+            var hidden = document.getElementById("HiddenField1");
+            if (id.checked == false) {
+
+                var checkBox = document.getElementById(hidden.value);
+                checkBox.checked = false;
+            }
+            else {
+                var checkBox = document.getElementById(hidden.value);
+                checkBox.checked = true;
+                for (var i = 0; i < row.length; i++) {
+                    if (masterTable.get_dataItems()[i].findElement("chkTax").checked == false) {
+                        var checkBox = document.getElementById(hidden.value);
+                        checkBox.checked = false;
+                    }
+                }
+            }
+        }
+
+        //         protected void RadWages_ItemCreated(object sender, GridItemEventArgs e)
+        //{
+        //    if (e.Item is GridHeaderItem)
+        //    {
+        //        GridHeaderItem hItem = (GridHeaderItem)e.Item;
+        //        CheckBox chk1 = (CheckBox)hItem.FindControl("chkall");
+        //        HiddenField1.Value = chk1.ClientID.ToString();
+        //    }
+        //}
+
+
+        function CheckAll(id) {
+            var masterTable = $find("<%= DocumentiGridView.ClientID %>").get_masterTableView();
+            var row = masterTable.get_dataItems();
+            if (id.checked == true) {
+                for (var i = 0; i < row.length; i++) {
+                    masterTable.get_dataItems()[i].findElement("SelectCheckBox").checked = true;
+                    masterTable.get_dataItems()[i].set_selected(true);
+                }
+            }
+            else {
+                for (var i = 0; i < row.length; i++) {
+                    masterTable.get_dataItems()[i].findElement("SelectCheckBox").checked = false;
+                    masterTable.get_dataItems()[i].set_selected(false);
+                }
+            }
+        }
+
+
+
+        function Select() {
+            var masterTable = $find("<%= DocumentiGridView.ClientID %>").get_masterTableView();
+            var row = masterTable.get_dataItems();
+            for (var i = 0; i < row.length; i++) {
+                masterTable.get_dataItems()[i].set_selected(true);
+            }
+        }
+
+
+    </script>
+
+    <asp:UpdateProgress runat="server" ID="UpdateProgress1" DisplayAfter="0">
+        <ProgressTemplate>
+            <div id="loadingOuter" style="position: absolute; width: 100%; text-align: center;
+                top: 300px; z-index: 2000000">
+                <table cellpadding="4" style="background-color: #4892FF; margin: 0 auto">
+                    <tr>
+                        <td>
+                            <div id="loadingInner" style="width: 300px; text-align: center; background-color: #BFDBFF;
+                                height: 60px">
+                                <span style="color: #00156E">Attendere prego ... </span>
+                                <br />
+                                <br />
+                                <img alt="" src="../../../../images/loading.gif" border="0">
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <div id="progressBar" style="position: absolute; width: 100%; text-align: center;
+                top: 300px; z-index: 2000000">
+                <div id="Div3" style="width: 310px; text-align: center; background-color: #BFDBFF;
+                    margin: 0 auto">
+                    <telerik:RadProgressArea OnClientProgressUpdating="updating" Skin="Office2007" ID="RadProgressArea1"
+                        runat="server" ProgressIndicators="RequestSize,TotalProgressPercent,TotalProgressBar"
+                        HeaderText="Esportazione in corso ...">
+                        <Localization Total="Totale:" Uploaded="Completato:" />
+                    </telerik:RadProgressArea>
+                </div>
+            </div>
+        </ProgressTemplate>
+    </asp:UpdateProgress>
+
+    <asp:UpdatePanel ID="Pannello" runat="server">
+        <ContentTemplate>
+            <div id="pageContent">
+
+
+                <telerik:RadFormDecorator ID="RadFormDecorator1" DecoratedControls="all" runat="server"
+                    DecorationZoneID="ZoneID1" Skin="Web20"></telerik:RadFormDecorator>
+                <telerik:RadFormDecorator ID="RadFormDecorator2" DecoratedControls="all" runat="server"
+                    DecorationZoneID="ZoneID2" Skin="Web20"></telerik:RadFormDecorator>
+              
+                <center>
+                    <telerik:RadProgressManager ID="Radprogressmanager1" runat="server" Skin="Office2007" />
+                    <table width="1150px" cellpadding="5" cellspacing="5" border="0">
+                        <tr>
+                            <td>
+                                <table class="ContainerWrapper" border="0" cellpadding="2" cellspacing="0" width="100%">
+                                    <tr>
+                                        <td>
+                                            <table cellpadding="0" cellspacing="0" style="width: 100%">
+                                                <tr>
+                                                    <td style="background-color: #BFDBFF; padding: 4px; border-bottom: 1px solid  #9ABBE8;
+                                                        border-top: 1px solid  #9ABBE8; height: 25px">
+                                                        &nbsp;<asp:Label ID="TitoloLabel" runat="server" Style="color: #00156E" Font-Bold="True"
+                                                            Text="Filtro Atti Amministrativi" />
+                                                    </td>
+                                                    <td align="center" style="width: 30px; background-color: #BFDBFF; border-bottom: 1px solid  #9ABBE8;
+                                                        border-top: 1px solid  #9ABBE8;">
+                                                        <asp:ImageButton ID="FiltraImageButton" runat="server" ImageUrl="~/images//search.png"
+                                                            ToolTip="Effettua la ricerca con i filtri impostati" Style="border: 0" ImageAlign="AbsMiddle" />
+                                                    </td>
+                                                    <td align="center" style="width: 30px; background-color: #BFDBFF; border-bottom: 1px solid  #9ABBE8;
+                                                        border-top: 1px solid  #9ABBE8;">
+                                                        <asp:ImageButton ID="AnnullaFiltroImageButton" Style="border: 0" runat="server" ImageUrl="~/images//cancelSearch.png"
+                                                            ToolTip="Annulla i filtri impostati" ImageAlign="AbsMiddle" />
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ContainerMargin">
+                                            <div id="ZoneID1">
+                                           
+                                            <table class="Container" cellpadding="0" cellspacing="4" width="100%" border="0">
+                                                <tr>
+                                                    <td align="left" style="height: 50px">
+                                                        <table style="width: 100%">
+                                                            <tr>
+                                                                <td style="width: 135px; text-align: left">
+                                                                    <asp:Label ID="DataInvioInizioLabel" runat="server" CssClass="Etichetta" Text="Data Documento  da" />
+                                                                </td>
+                                                                <td style="width: 125px; text-align: left">
+                                                                    <telerik:RadDatePicker ID="DataInizioTextBox" Skin="Office2007" Width="110px" runat="server"
+                                                                        MinDate="1753-01-01">
+                                                                        <Calendar runat="server">
+                                                                            <SpecialDays>
+                                                                                <telerik:RadCalendarDay Repeatable="Today" Date="" ItemStyle-CssClass="rcToday" />
+                                                                            </SpecialDays>
+                                                                        </Calendar>
+                                                                        <DatePopupButton ToolTip="Apri il calendario." />
+                                                                    </telerik:RadDatePicker>
+                                                                </td>
+                                                                <td style="width: 20px">
+                                                                    <asp:Label ID="DataInvioFineLabel" runat="server" CssClass="Etichetta" Text="a" />
+                                                                </td>
+                                                                <td style="width: 125px">
+                                                                    <telerik:RadDatePicker ID="DataFineTextBox" Skin="Office2007" Width="110px" runat="server"
+                                                                        MinDate="1753-01-01">
+                                                                        <Calendar runat="server">
+                                                                            <SpecialDays>
+                                                                                <telerik:RadCalendarDay Repeatable="Today" Date="" ItemStyle-CssClass="rcToday" />
+                                                                            </SpecialDays>
+                                                                        </Calendar>
+                                                                        <DatePopupButton ToolTip="Apri il calendario." />
+                                                                    </telerik:RadDatePicker>
+                                                                </td>
+                                                                <td style="width: 80px; text-align: center">
+                                                                    <asp:Label ID="TipologiaLabel" runat="server" CssClass="Etichetta" Text="Tipologia"
+                                                                        ForeColor="#FF9900" />
+                                                                </td>
+                                                                <td style="width: 150px">
+                                                                    <telerik:RadComboBox ID="TipologieDocumentoComboBox" runat="server" EmptyMessage="- Seleziona Tipologia -"
+                                                                        Filter="StartsWith" ItemsPerRequest="10" MaxHeight="200px" Skin="Office2007"
+                                                                        Width="100%" />
+                                                                </td>
+                                                                <td style="text-align: center">
+                                                                    <asp:Label ID="StatoConservazioneLabel" runat="server" CssClass="Etichetta" Font-Bold="True"
+                                                                        ForeColor="#FF9900" Text="Stato Conservazione" Width="160px" />
+                                                                </td>
+                                                                <td>
+                                                                    <asp:CheckBox ID="DaInviareCheckBox" runat="server" Checked="True" CssClass="etichetta"
+                                                                        Text="Da inviare" ToolTip="Se selezionato permette di visualizzare solo gli Atti Amministrativi da inviare al Modulo Archivio."
+                                                                        Width="100px" />
+                                                                </td>
+                                                                <td>
+                                                                    <asp:CheckBox ID="InviateCheckBox" runat="server" Checked="True" CssClass="etichetta"
+                                                                        Text="Inviati" ToolTip="Se selezionato permette di visualizzare solo gli Atti Amministrativi inviati al Modulo Archivio e non impacchettati."
+                                                                        Width="85px" />
+                                                                </td>
+                                                                <td>
+                                                                    <asp:CheckBox ID="ArchiviateCheckBox" runat="server" Checked="True" CssClass="etichetta"
+                                                                        Text="Archiviati" ToolTip="Se selezionato permette di visualizzare solo gli Atti Amministrativi inviati al Modulo Archivio e impacchettati."
+                                                                        Width="100px" />
+                                                                </td>
+                                                            </tr>
+                                                        </table>
+                                                    </td>
+                                             
+                                          </div>
+                                             
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <table style="width: 100%; background-color: #BFDBFF; border: 1px solid #5D8CC9">
+                                                <tr>
+                                                    <td>
+                                                        <table style="width: 100%; background-color: #BFDBFF">
+                                                            <tr>
+                                                                <td>
+                                                                    &nbsp;<asp:Label ID="TitoloElencoAttiAmministrativiLabel" runat="server" Font-Bold="True"
+                                                                        Style="width: 500px; color: #00156E; background-color: #BFDBFF" Text="Elenco Atti Amministrativi" />
+                                                                </td>
+
+                                                                 <td align="center" style="width: 125; border-left: 0 solid #5D8CC9;">
+                                                                    <telerik:RadButton ID="NoPaging" runat="server" Text="Non Paginare" Skin="Office2007"
+                                                                        ImageAlign="AbsMiddle" Width="115px" ToolTip="Disattiva/Attiva Paginazione">
+                                                                        <Icon PrimaryIconUrl="~/images/Next.png" PrimaryIconLeft="5px" />
+                                                                    </telerik:RadButton>
+                                                                </td>
+
+                                                                <td align="center" style="width: 40px">
+                                                                    <asp:ImageButton ID="EsportaInExcelImageButton" Style="border: 0" runat="server"
+                                                                        ImageUrl="~/images//excel32.png" ToolTip="Esporta gli Atti visualizzati in un file formato excel"
+                                                                        ImageAlign="AbsMiddle" />
+                                                                </td>
+
+                                                                <td align="center" style="width: 40px">
+                                                                    <asp:ImageButton ID="ConservaAttiAmministrativiImageButton" Style="border: 0" runat="server"
+                                                                        ImageUrl="~/images//Export32.png" ToolTip="Invia al modulo Archivio gli Atti Amministrativi selezionati."
+                                                                        ImageAlign="AbsMiddle" />
+                                                                </td>
+                                                            </tr>
+                                                        </table>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>
+                                                        <div id="ZoneID2" style="overflow: auto; height: 615px; width: 100%; background-color: #FFFFFF;
+                                                            border: 0px solid #5D8CC9;">
+                                                            <telerik:RadGrid ID="DocumentiGridView" runat="server" AllowPaging="True" AutoGenerateColumns="False"
+                                                                AllowFilteringByColumn="True" CellSpacing="0" GridLines="None" Skin="Office2007"
+                                                                Width="99.8%" AllowSorting="True" Culture="it-IT" PageSize="18" AllowMultiRowSelection="true">
+                                                                <GroupingSettings CaseSensitive="False" />
+                                                                <%--<ClientSettings>
+                                                                    <Selecting AllowRowSelect="True"></Selecting>
+                                                                </ClientSettings>--%>
+                                                                <MasterTableView DataKeyNames="Id, IdDocumentoWS,Nomefile">
+                                                                    <Columns>
+                                                                        <telerik:GridTemplateColumn UniqueName="CheckBoxTemplateColumn" HeaderTooltip="Seleziona tutti gli atti"
+                                                                            AllowFiltering="False">
+                                                                            <HeaderTemplate>
+                                                                                <div style="width: 16px; height: 16px" align="center">
+                                                                                    <asp:CheckBox ID="SelectAllCheckBox" OnCheckedChanged="ToggleSelectedState" AutoPostBack="True"
+                                                                                        runat="server" />
+                                                                                </div>
+                                                                            </HeaderTemplate>
+                                                                            <ItemTemplate>
+                                                                                <asp:CheckBox ID="SelectCheckBox" OnCheckedChanged="ToggleRowSelection" AutoPostBack="True"
+                                                                                    runat="server" ToolTip="Seleziona atto da archiviare" />
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+
+                                                                        <%--<telerik:GridTemplateColumn UniqueName="CheckBoxTemplateColumn" HeaderTooltip="Seleziona tutti gli atti"
+                                                                            AllowFiltering="False">
+                                                                            <HeaderStyle Width="30px"></HeaderStyle>
+                                                                            <ItemStyle HorizontalAlign="Center" VerticalAlign="Top"></ItemStyle>
+                                                                            <HeaderTemplate>
+                                                                              <asp:CheckBox ID="SelectAllCheckBox" AutoPostBack="true"
+                                                                                        onclick="CheckAll(this);" runat="server" />
+                                                                               
+                                                                            </HeaderTemplate>
+                                                                            <ItemTemplate>
+                                                                                <asp:CheckBox ID="SelectCheckBox" onclick="CheckItem(this);" runat="server" AutoPostBack="true">
+                                                                                </asp:CheckBox>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>--%>
+
+                                                                        <telerik:GridButtonColumn ButtonType="ImageButton" CommandName="Stato" ImageUrl="~\images\knob-search16.png"
+                                                                            UniqueName="Stato" HeaderTooltip="Stato Conservazione Atto Amministrativo.">
+                                                                            <HeaderStyle Width="20px" />
+                                                                        </telerik:GridButtonColumn>
+
+                                                                        <telerik:GridBoundColumn DataField="Id" DataType="System.Int32" FilterControlAltText="Filter Id column"
+                                                                            HeaderText="Id" ReadOnly="True" SortExpression="Id" UniqueName="Id" Visible="false" />
+                                                                        <telerik:GridTemplateColumn SortExpression="ContatoreGenerale" UniqueName="ContatoreGenerale"
+                                                                            HeaderText="N." DataField="ContatoreGenerale" HeaderStyle-Width="60px" ItemStyle-Width="60px"
+                                                                            FilterControlWidth="100%">
+                                                                            <FilterTemplate>
+                                                                                <telerik:RadNumericTextBox Width="100%" ID="FiltroContatoreGeneraleTextBox" runat="server"
+                                                                                    MaxLength="9" ClientEvents-OnLoad="OnFiltroContatoreGeneraleTextBoxLoad" DbValue='<%# TryCast(Container,GridItem).OwnerTableView.GetColumn("ContatoreGenerale").CurrentFilterValue %>'
+                                                                                    ClientEvents-OnKeyPress="OnFiltroContatoreGeneraleTextBoxKeyPressed" Skin="Office2007">
+                                                                                    <NumberFormat GroupSeparator="" DecimalDigits="0" />
+                                                                                </telerik:RadNumericTextBox>
+                                                                                <telerik:RadScriptBlock ID="RadScriptBlock1" runat="server">
+                                                                                    <script type="text/javascript">
+                                                                                        function OnFiltroContatoreGeneraleTextBoxKeyPressed(sender, args) {
+                                                                                            if (13 == args.get_keyCode()) {
+                                                                                                var tableView = $find("<%# CType(Container,GridItem).OwnerTableView.ClientID %>");
+                                                                                                var c = sender.get_textBoxValue();
+                                                                                                tableView.filter("ContatoreGenerale", c, "EqualTo");
+                                                                                                args.set_cancel(true);
+                                                                                            }
+                                                                                            var text = sender.get_value() + args.get_keyCharacter();
+                                                                                            if (!text.match('^[0-9]+$'))
+                                                                                                args.set_cancel(true);
+                                                                                        }
+
+                                                                                        // SOVRASCRIVO GLI STILI
+                                                                                        function OnFiltroContatoreGeneraleTextBoxLoad(sender, args) {
+                                                                                            sender.get_styles().HoveredStyle[0] = "";
+                                                                                            sender.get_styles().HoveredStyle[1] = "";
+                                                                                            sender.get_styles().FocusedStyle[0] = "";
+                                                                                            sender.get_styles().FocusedStyle[1] = "";
+                                                                                            sender.updateCssClass();
+                                                                                        }
+                                                                                    </script>
+                                                                                </telerik:RadScriptBlock>
+                                                                            </FilterTemplate>
+                                                                            <ItemTemplate>
+                                                                                <div title='<%# Eval("ContatoreGenerale")%>' style="white-space: nowrap; overflow: hidden;
+                                                                                    text-overflow: ellipsis; width: 55px;">
+                                                                                    <%# Eval("ContatoreGenerale")%>
+                                                                                </div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+
+
+                                                                        <telerik:GridTemplateColumn SortExpression="DescrizioneTipologia" UniqueName="DescrizioneTipologia"
+                                                                            AllowFiltering="false" HeaderText="Tipo" DataField="DescrizioneTipologia" HeaderStyle-Width="100px"
+                                                                            ItemStyle-Width="100px">
+                                                                            <ItemTemplate>
+                                                                                <div title='<%# Eval("DescrizioneTipologia")%>' style="white-space: nowrap; overflow: hidden;
+                                                                                    text-overflow: ellipsis; width: 95px;">
+                                                                                    <%# Eval("DescrizioneTipologia")%></div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+
+
+                                                                        <telerik:GridTemplateColumn SortExpression="DataDocumento" UniqueName="DataDocumento"
+                                                                            HeaderText="Data" DataField="DataDocumento" HeaderStyle-Width="90px" ItemStyle-Width="90px">
+                                                                            <FilterTemplate>
+                                                                                <telerik:RadDatePicker ID="DataDocumentoTextBox" Skin="Office2007" ShowPopupOnFocus="true"
+                                                                                    DatePopupButton-Visible="false" Width="100%" runat="server" MinDate="1753-01-01"
+                                                                                    ClientEvents-OnDateSelected="OnDataDocumentoTextBoxDateSelected" DbSelectedDate='<%# DataDocumento(Container) %>'
+                                                                                    DateInput-ClientEvents-OnKeyPress="OnDataDocumentoTextBoxKeyPressed">
+                                                                                    <Calendar ID="Calendar8" runat="server">
+                                                                                        <SpecialDays>
+                                                                                            <telerik:RadCalendarDay Date="" ItemStyle-CssClass="rcToday" Repeatable="Today" />
+                                                                                        </SpecialDays>
+                                                                                    </Calendar>
+                                                                                </telerik:RadDatePicker>
+                                                                                <telerik:RadScriptBlock ID="RadScriptBlock2" runat="server">
+                                                                                    <script type="text/javascript">
+
+                                                                                        function OnDataDocumentoTextBoxKeyPressed(sender, args) {
+                                                                                            if (13 == args.get_keyCode()) {
+                                                                                                var tableView = $find("<%# CType(Container,GridItem).OwnerTableView.ClientID %>");
+                                                                                                var c = sender.get_textBoxValue();
+
+                                                                                                var idPicker = sender.get_element().parentNode.parentNode.children(0).id;
+                                                                                                var picker = $find(idPicker)
+
+                                                                                                if (Date.parse(c)) {
+
+                                                                                                    var ddmmyyyy = c.split('/');
+                                                                                                    var mmddyyyy = ddmmyyyy[1] + '/' + ddmmyyyy[0] + '/' + ddmmyyyy[2];
+
+                                                                                                    picker.set_selectedDate(new Date(mmddyyyy));
+                                                                                                    // OnDataDocumentoTextBoxDateSelected(picker, "");
+                                                                                                    // picker.hidePopup();
+                                                                                                } else {
+                                                                                                    picker.set_selectedDate(null);
+                                                                                                    //picker.hidePopup();
+                                                                                                }
+                                                                                                args.set_cancel(true);
+
+                                                                                            }
+                                                                                        }
+
+
+                                                                                        function OnDataDocumentoTextBoxDateSelected(sender, args) {
+                                                                                            var tableView = $find("<%# ctype(Container,GridItem).OwnerTableView.ClientID %>");
+
+                                                                                            var date = FormatSelectedDate(sender);
+                                                                                            var toDate = '';
+
+                                                                                            try {
+                                                                                                var dateInput = sender.get_dateInput();
+                                                                                                var d = sender.get_selectedDate();
+                                                                                                d.setDate(d.getDate() + 1);
+                                                                                            }
+                                                                                            catch (e) {
+                                                                                            }
+
+
+                                                                                            toDate = dateInput.get_dateFormatInfo().FormatDate(d, dateInput.get_displayDateFormat());
+
+                                                                                            tableView.filter("DataDocumento", date + " " + toDate, "Between");
+
+                                                                                        }
+
+                                                                                        function FormatSelectedDate(picker) {
+                                                                                            var date = picker.get_selectedDate();
+                                                                                            var dateInput = picker.get_dateInput();
+                                                                                            var formattedDate = dateInput.get_dateFormatInfo().FormatDate(date, dateInput.get_displayDateFormat());
+                                                                                            return formattedDate;
+                                                                                        }
+
+                                                                                           
+
+                                                                                    </script>
+                                                                                </telerik:RadScriptBlock>
+                                                                            </FilterTemplate>
+                                                                            <ItemTemplate>
+                                                                                <div title='<%# Eval("DataDocumento","{0:dd/MM/yyyy}")%>' style="white-space: nowrap;
+                                                                                    overflow: hidden; text-overflow: ellipsis; width: 85px;">
+                                                                                    <%# Eval("DataDocumento", "{0:dd/MM/yyyy}")%></div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+
+                                                                        <telerik:GridTemplateColumn SortExpression="Oggetto" UniqueName="Oggetto" HeaderText="Oggetto"
+                                                                            DataField="Oggetto" HeaderStyle-Width="220px" ItemStyle-Width="220px" AutoPostBackOnFilter="True"
+                                                                            FilterControlWidth="100%" ShowFilterIcon="False">
+                                                                            <ItemTemplate>
+                                                                                <div title='<%# Replace(Eval("Oggetto"), "'", "&#039;")%>' style="white-space: nowrap;
+                                                                                    overflow: hidden; text-overflow: ellipsis; width: 220px; border: 0px solid red">
+                                                                                    <%# Eval("Oggetto")%></div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+
+                                                                        <telerik:GridTemplateColumn SortExpression="DescrizioneUfficio" UniqueName="DescrizioneUfficio"
+                                                                            HeaderText="Ufficio" DataField="DescrizioneUfficio" HeaderStyle-Width="220px"
+                                                                            ItemStyle-Width="220px" AutoPostBackOnFilter="True" FilterControlWidth="100%"
+                                                                            ShowFilterIcon="False">
+                                                                            <ItemTemplate>
+                                                                                <div title='<%# Eval("DescrizioneUfficio")%>' style="white-space: nowrap; overflow: hidden;
+                                                                                    text-overflow: ellipsis; width: 220px; border: 0px solid red">
+                                                                                    <%# Eval("DescrizioneUfficio")%></div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+
+                                                                        <telerik:GridTemplateColumn SortExpression="DescrizioneSettore" UniqueName="DescrizioneSettore"
+                                                                            HeaderText="Settore" DataField="DescrizioneSettore" HeaderStyle-Width="200px"
+                                                                            ItemStyle-Width="200px" AutoPostBackOnFilter="True" FilterControlWidth="100%"
+                                                                            ShowFilterIcon="False">
+                                                                            <ItemTemplate>
+                                                                                <div title='<%# Eval("DescrizioneSettore")%>' style="white-space: nowrap; overflow: hidden;
+                                                                                    text-overflow: ellipsis; width: 200px; border: 0px solid red">
+                                                                                    <%# Eval("DescrizioneSettore")%></div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+
+
+                                                                        <telerik:GridButtonColumn ItemStyle-Width="20px" HeaderStyle-Width="20px" ButtonType="ImageButton"
+                                                                            CommandName="Anteprima" FilterControlAltText="Filter Anteprima column" ImageUrl="~/images/knob-search16.png"
+                                                                            UniqueName="Anteprima" Text="Visualizza Atto Amministrativo..." HeaderTooltip="Visualizza Atto Amministrativo">
+                                                                        </telerik:GridButtonColumn>
+
+                                                                        <telerik:GridButtonColumn ItemStyle-Width="20px" HeaderStyle-Width="20px" ButtonType="ImageButton"
+                                                                            CommandName="Sblocco" FilterControlAltText="Filter Sblocco column" ImageUrl="~/images/Unlock_16.png"
+                                                                            UniqueName="Sblocco" Text="Sblocco Atto Amministrativo" HeaderTooltip="Sblocco Atto Amministrativo">
+                                                                        </telerik:GridButtonColumn>
+                                                                    </Columns>
+                                                                </MasterTableView>
+                                                            </telerik:RadGrid>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td align="center" style="background-color: #BFDBFF; padding: 4px; border-bottom: 0px solid  #9ABBE8;
+                                border-top: 1px solid  #9ABBE8; height: 25px">
+                            </td>
+                        </tr>
+                    </table>
+                    <table style="width: 1150px; border: 1px solid #9ABBE8; text-align: center">
+                        <tr>
+                            <td>
+                                <table>
+                                    <tr>
+                                        <td style="width: 80px">
+                                            <asp:Label ID="LegendaLabel" runat="server" CssClass="Etichetta" Text="Legenda :"
+                                                Font-Bold="True" ForeColor="#FF9900" />
+                                        </td>
+                                        <td>
+                                            <img alt="" src="../../../../Images/pBlue16.png" style="vertical-align: middle" />
+                                            <asp:Label ID="LegendaDaInviare" runat="server" CssClass="Etichetta" Style="text-align: center"
+                                                Text="Da inviare al Modulo Archivio" Width="200px" />
+                                        </td>
+                                        <td>
+                                            <img alt="" src="../../../../Images/pVerde16.png" style="vertical-align: middle" />
+                                            <asp:Label ID="LegendaInviataNonImpacchettata" runat="server" CssClass="Etichetta"
+                                                Style="text-align: center" Text="Inviato al Modulo Archivio e non impacchettato"
+                                                Width="320px" />
+                                        </td>
+                                        <td>
+                                            <img alt="" src="../../../../Images/pRosso16.png" style="vertical-align: middle" />
+                                            <asp:Label ID="LegendaInviataImpacchettata" runat="server" CssClass="Etichetta" Style="text-align: center"
+                                                Text="Inviato al Modulo Archivio e impacchettato" Width="290px" />
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+                    <div id="messageBoxPanel" style="position: absolute; width: 100%; text-align: center;
+                        z-index: 2000000; display: none; top: 300px">
+                        <div id="messageBox" style="width: 300px; height: 40; text-align: center; background-color: #BFDBFF;
+                            margin: 0 auto;">
+                        </div>
+                    </div>
+                </center>
+                <asp:HiddenField ID="infoOperazioneHidden" runat="server" />
+                <asp:ImageButton ID="AggiornaEmailButton" runat="server" ImageUrl="~/images//knob-search16.png"
+                    Style="display: none" />
+            </div>
+        </ContentTemplate>
+    </asp:UpdatePanel>
+</asp:Content>
