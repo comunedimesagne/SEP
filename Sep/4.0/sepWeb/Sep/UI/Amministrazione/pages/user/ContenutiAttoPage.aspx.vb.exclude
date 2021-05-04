@@ -1,0 +1,229 @@
+﻿#Region "Namespaces importati"
+
+Imports ParsecAdmin
+Imports System.Transactions
+Imports Telerik.Web.UI
+
+#End Region
+
+Partial Class ContenutiAttoPage
+    Inherits System.Web.UI.Page
+
+    Private WithEvents MainPage As MainPage
+
+#Region "PROPRIETA'"
+
+    Public Property ContenutoAtto() As ACM_ContenutoAtto
+        Get
+            Return CType(Session("ContenutiAttoPage_ContenutoAtto"), ACM_ContenutoAtto)
+        End Get
+        Set(ByVal value As ACM_ContenutoAtto)
+            Session("ContenutiAttoPage_ContenutoAtto") = value
+        End Set
+    End Property
+
+    Public Property Contenuti() As List(Of ParsecAdmin.ACM_ContenutoAtto)
+        Get
+            Return CType(Session("ContenutiAttoPage_Contenuti"), List(Of ACM_ContenutoAtto))
+        End Get
+        Set(ByVal value As List(Of ACM_ContenutoAtto))
+            Session("ContenutiAttoPage_Contenuti") = value
+        End Set
+    End Property
+
+#End Region
+
+#Region "EVENTI PAGINA"
+
+    Protected Sub Page_Init(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Init
+        MainPage = CType(Me.Master, MainPage)
+        MainPage.NomeModulo = "Amministrazione"
+        MainPage.DescrizioneProcedura = "> Gestione Contenuti Atto"
+        If Not Me.Page.IsPostBack Then
+            Me.ContenutoAtto = Nothing
+            Me.Contenuti = Nothing
+            Me.ResettaVista()
+            'Dim sortExpr As New GridSortExpression()
+            'sortExpr.FieldName = "Descrizione"
+            'sortExpr.SortOrder = GridSortOrder.Ascending
+            'Me.ContenutiGridView.MasterTableView.SortExpressions.AddSortExpression(sortExpr)
+            Me.DescrizioneTextBox.Focus()
+        End If
+        Dim widthStyle As String = "auto"
+        Dim browser = Request.Browser.Browser
+        If browser.ToLower.Contains("ie") Then widthStyle = "100%"
+        Me.PannelloDettaglio.Style.Add("width", widthStyle)
+        Me.PannelloGriglia.Style.Add("width", widthStyle)
+        Me.ContenutiGridView.Style.Add("width", widthStyle)
+    End Sub
+
+    Protected Sub Page_LoadComplete(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.LoadComplete
+        ParsecUtility.Utility.Confirm("Eliminare il contenuto atto selezionato?", False, Not Me.ContenutoAtto Is Nothing)
+        If Not Me.Contenuti Is Nothing Then Me.TitoloLabel.Text = "Elenco Contenuti&nbsp;" & If(Me.Contenuti.Count > 0, "( " & Me.Contenuti.Count.ToString & " )", "")
+    End Sub
+
+#End Region
+
+#Region "EVENTI TOOLBAR"
+
+    Private Sub RadToolBar_ButtonClick(ByVal sender As Object, ByVal e As RadToolBarEventArgs) Handles RadToolBar.ButtonClick
+        Select Case CType(e.Item, RadToolBarButton).CommandName
+            Case "Salva"
+                Dim message As String = String.Empty
+                Try
+                    Me.Save()
+                    Me.AggiornaGriglia()
+                Catch ex As ApplicationException
+                    message = ex.Message
+                End Try
+                If String.IsNullOrEmpty(message) Then
+                    Me.infoOperazioneHidden.Value = "Operazione conclusa con successo!"
+                    Me.ResettaVista()
+                Else
+                    ParsecUtility.Utility.MessageBox(message, False)
+                End If
+            Case "Nuovo"
+                Me.ResettaVista()
+                Me.AggiornaGriglia()
+            Case "Annulla"
+                Me.ResettaVista()
+                Me.AggiornaGriglia()
+            Case "Elimina"
+                If CType(Me.MainPage.FindControl("hflVerificaElimina"), HiddenField).Value = "1" Then
+                    If Not Me.ContenutoAtto Is Nothing Then
+                        Dim message As String = String.Empty
+                        Try
+                            Me.Delete()
+                            Me.ResettaVista()
+                            Me.AggiornaGriglia()
+                        Catch ex As Exception
+                            message = ex.Message
+                        End Try
+                        If String.IsNullOrEmpty(message) Then
+                            Me.infoOperazioneHidden.Value = "Operazione conclusa con successo!"
+                        Else
+                            ParsecUtility.Utility.MessageBox(message, False)
+                        End If
+
+                    Else
+                        ParsecUtility.Utility.MessageBox("E' necessario selezionare un ContenutoAtto!", False)
+                    End If
+                End If
+                CType(Me.MainPage.FindControl("hflVerificaElimina"), HiddenField).Value = "0"
+            Case "Trova"
+                Me.Search()
+        End Select
+    End Sub
+
+    Protected Sub RadToolBar_ItemCreated(ByVal sender As Object, ByVal e As RadToolBarEventArgs) Handles RadToolBar.ItemCreated
+        If e.Item.Text = "Elimina" Then e.Item.Attributes.Add("onclick", "return Confirm();")
+    End Sub
+
+#End Region
+
+#Region "EVENTI ContenutiGridView"
+
+    Protected Sub ContenutiGridView_NeedDataSource(ByVal sender As Object, ByVal e As GridNeedDataSourceEventArgs) Handles ContenutiGridView.NeedDataSource
+        If Me.Contenuti Is Nothing Then
+            Dim Contenuti As New ContenutoAttoRepository
+            Me.Contenuti = Contenuti.GetView(Nothing)
+            Contenuti.Dispose()
+        End If
+        Me.ContenutiGridView.DataSource = Me.Contenuti
+    End Sub
+
+    Protected Sub ContenutiGridView_ItemCommand(ByVal sender As Object, ByVal e As GridCommandEventArgs) Handles ContenutiGridView.ItemCommand
+        Me.AggiornaVista(e.Item)
+        If e.CommandName = "Copy" Then Me.ContenutoAtto = Nothing
+    End Sub
+
+    Protected Sub ContenutiGridView_ItemCreated(ByVal sender As Object, ByVal e As GridItemEventArgs) Handles ContenutiGridView.ItemCreated
+        If TypeOf e.Item Is Telerik.Web.UI.GridPagerItem Then
+            Dim pageSizeComboBox As RadComboBox = CType(e.Item.FindControl("PageSizeComboBox"), RadComboBox)
+            pageSizeComboBox.Visible = False
+            Dim changePageSizelbl As Label = CType(e.Item.FindControl("ChangePageSizeLabel"), Label)
+            changePageSizelbl.Visible = False
+        End If
+    End Sub
+
+#End Region
+
+#Region "METODI PRIVATI"
+
+    Private Sub AggiornaGriglia()
+        Me.Contenuti = Nothing
+        Me.ContenutiGridView.Rebind()
+    End Sub
+
+    Private Sub Search()
+        Dim Contenuti As New ContenutoAttoRepository
+        Dim filtro As FiltroContenutoAtto = Me.GetFiltro
+        Me.Contenuti = Contenuti.GetView(filtro)
+        Me.ContenutiGridView.Rebind()
+        Contenuti.Dispose()
+    End Sub
+
+    Private Function GetFiltro() As FiltroContenutoAtto
+        Dim filtro As New FiltroContenutoAtto
+        filtro.Descrizione = Me.DescrizioneTextBox.Text.Trim
+        filtro.Abilitato = Me.AbChkB.Checked
+        Return filtro
+    End Function
+
+    Private Sub Delete()
+        Dim Contenuti As New ContenutoAttoRepository
+        Contenuti.Delete(Me.ContenutoAtto.Id)
+        Contenuti.Dispose()
+    End Sub
+
+    Private Sub Save()
+        Dim utenteCollegato As Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+        Dim Contenuti As New ContenutoAttoRepository
+        Dim ContenutoAtto As ACM_ContenutoAtto = Contenuti.CreateFromInstance(Me.ContenutoAtto)
+        With ContenutoAtto
+            .Descrizione = Me.DescrizioneTextBox.Text
+            If Not Me.PercentualeTextBox.Value Is Nothing Then .Percentuale = CInt(Me.PercentualeTextBox.Value)
+            If Not Me.PercentualeMinTextBox.Value Is Nothing Then .PercentualeMinima = CInt(Me.PercentualeMinTextBox.Value)
+            .Abilitato = Me.AbChkB.Checked
+            .IdUtente = utenteCollegato.Id
+        End With
+        Try
+            Contenuti.Save(ContenutoAtto)
+            Me.ContenutoAtto = Contenuti.GetById(ContenutoAtto.Id)
+        Catch ex As Exception
+            Throw New ApplicationException(ex.Message)
+        Finally
+            Contenuti.Dispose()
+        End Try
+    End Sub
+
+    Private Sub ResettaVista()
+        Me.ContenutoAtto = Nothing
+        Me.DescrizioneTextBox.Text = String.Empty
+        Me.PercentualeTextBox.Text = String.Empty
+        Me.PercentualeMinTextBox.Text = String.Empty
+        Me.AbChkB.Checked = True
+    End Sub
+
+    Private Sub AggiornaVista(ByVal ContenutoAtto As ACM_ContenutoAtto)
+        Me.ResettaVista()
+        With ContenutoAtto
+            Me.DescrizioneTextBox.Text = .Descrizione
+            Me.PercentualeTextBox.Text = .Percentuale
+            Me.PercentualeMinTextBox.Text = .PercentualeMinima
+            Me.AbChkB.Checked = .Abilitato
+        End With
+        Me.ContenutoAtto = ContenutoAtto
+    End Sub
+
+    Private Sub AggiornaVista(ByVal item As GridDataItem)
+        Dim id As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+        Dim Contenuti As New ContenutoAttoRepository
+        Dim ContenutoAtto = Contenuti.GetById(id)
+        Contenuti.Dispose()
+        Me.AggiornaVista(ContenutoAtto)
+    End Sub
+
+#End Region
+
+End Class

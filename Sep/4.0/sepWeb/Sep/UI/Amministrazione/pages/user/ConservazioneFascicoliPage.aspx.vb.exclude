@@ -1,0 +1,3232 @@
+﻿Imports Telerik.Web.UI
+Imports System.Transactions
+Imports System.IO
+Imports ParsecAdmin
+
+
+
+
+Partial Class ConservazioneFascicoliPage
+    Inherits System.Web.UI.Page
+
+    Public Class FascicoloConservazione
+
+        ' Public Property fascicolo As ParsecAdmin.Fascicolo
+        Public Property IdFascicolo As Integer
+        Public Property oggetto As String
+        Public Property responsabile As String
+        Public Property dataApertura As Date
+        Public Property dataChiusura As Date
+        Public Property CodiceFascicoloSistema As String
+        Public Property CodiceFascicoloUtente As String
+        Public Property amministrazioniPartecipanti As String
+        Public Property numeroRegistro As Integer
+        Public Property DaInviare As Boolean = False
+        Public Property InviatoArchivio As Boolean = False
+        Public Property Impacchettato As Boolean = False
+
+        Public Property listaDocumenti As List(Of FascicoloDocumento)
+
+    End Class
+
+    Public Class FascicoloDocumento
+        Public Property Id As Integer
+        Public Property IdFascicolo As Integer
+        Public Property IdDocumento As Integer
+        Public Property path As String
+        Public Property CodiceDocumento As Integer?
+        Public Property NumeroDocumento As Integer?
+        Public Property DataDocumento As Date?
+        Public Property TipoDocumento As Integer
+        Public Property NomeDocumento As String
+        Public Property NomeDocumentoOriginale As String
+        Public Property Fase As String
+        Public Property Definitivo As Boolean?
+        Public Property Stato As String
+        Public Property IdDocumentoWS As Integer?
+        Public Property DescrizioneFase As String
+        Public Property DescrizioneTipoDocumento As String
+
+        Public Property IdPacchettoVersamento As Integer?
+    End Class
+
+    Public Class MessaggioOperazione
+        Public Property messaggio As String
+        Public Property errore As Boolean
+    End Class
+
+    Public Class FiltroFascicolo
+
+        Public Property DaInviare As Boolean = False
+        Public Property Inviati As Boolean = False
+        Public Property Archiviati As Boolean = False
+        Public Property DataAperturaInizio As Nullable(Of DateTime) = Nothing
+        Public Property DataAperturaFine As Nullable(Of DateTime) = Nothing
+        Public Property DataChusuraInizio As Nullable(Of DateTime) = Nothing
+        Public Property DataChiusuraFine As Nullable(Of DateTime) = Nothing
+
+        Public Property NumeroRegistroInizio As Nullable(Of Integer) = Nothing
+        Public Property NumeroRegistroFine As Nullable(Of Integer) = Nothing
+
+        Public Property Oggetto As String = String.Empty
+        Public Property TipoFascicolo As Integer?
+
+    End Class
+
+    Private WithEvents MainPage As MainPage
+
+#Region "PROPRIETA'"
+
+    Public Property Fascicoli() As List(Of FascicoloConservazione)
+        Get
+            Return CType(Session("ConservazioneFascicoliPage_Documenti"), List(Of FascicoloConservazione))
+        End Get
+        Set(ByVal value As List(Of FascicoloConservazione))
+            Session("ConservazioneFascicoliPage_Documenti") = value
+        End Set
+    End Property
+
+
+    Protected Function DataApertura(ByVal container As GridItem) As System.Nullable(Of DateTime)
+        If container.OwnerTableView.GetColumn("DataApertura").CurrentFilterValue = String.Empty Then
+            Return New System.Nullable(Of DateTime)()
+        Else
+            Try
+                Return DateTime.Parse(container.OwnerTableView.GetColumn("DataApertura").CurrentFilterValue.Split(" ")(0))
+            Catch ex As Exception
+                Return New System.Nullable(Of DateTime)()
+            End Try
+
+        End If
+    End Function
+
+    Protected Function DataChiusura(ByVal container As GridItem) As System.Nullable(Of DateTime)
+        If container.OwnerTableView.GetColumn("DataChiusura").CurrentFilterValue = String.Empty Then
+            Return New System.Nullable(Of DateTime)()
+        Else
+            Try
+                Return DateTime.Parse(container.OwnerTableView.GetColumn("DataChiusura").CurrentFilterValue.Split(" ")(0))
+            Catch ex As Exception
+                Return New System.Nullable(Of DateTime)()
+            End Try
+
+        End If
+    End Function
+
+    Private Property AmministrazioneTitolare() As ParsecAdmin.Cliente
+        Get
+            Return CType(Session("ConservazioneFascicoliPage_StazioneAppaltante"), ParsecAdmin.Cliente)
+        End Get
+        Set(ByVal value As ParsecAdmin.Cliente)
+            Session("ConservazioneFascicoliPage_StazioneAppaltante") = value
+        End Set
+    End Property
+
+    Private Property EnteConservatoreAttivo As wsConservazione.EnteConservatore
+        Get
+            Return CType(Session("ConservazioneFascicoliPage_EnteConservatoreAttivo"), wsConservazione.EnteConservatore)
+        End Get
+        Set(ByVal value As wsConservazione.EnteConservatore)
+            Session("ConservazioneFascicoliPage_EnteConservatoreAttivo") = value
+        End Set
+    End Property
+
+#End Region
+
+#Region "EVENTI PAGINA"
+
+    Protected Sub Page_Init(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Init
+        Me.MainPage = CType(Me.Master, MainPage)
+        Me.MainPage.NomeModulo = "Atti Decisionali"
+        Me.MainPage.DescrizioneProcedura = "> Conservazione Fascicoli "
+
+
+        Dim css As HtmlGenericControl
+        css = New HtmlGenericControl
+        css.TagName = "style"
+        css.Attributes.Add("type", "text/css")
+        css.InnerHtml = "div.RadUploadProgressArea_Office2007 .ruProgress { background-image: none;}" & vbCrLf
+        css.InnerHtml += ".RadUploadProgressArea { width: 320px !important;}" & vbCrLf
+        css.InnerHtml += "div.RadUploadProgressArea li.ruProgressHeader{ margin: 10px 18px 0px; }" & vbCrLf
+        css.InnerHtml += "table.CkeckListCss tr td label {margin-right:10px;padding-right:10px;}" & vbCrLf
+        Me.Page.Header.Controls.Add(css)
+
+        If Not Me.Page.IsPostBack Then
+
+            Me.AmministrazioneTitolare = (New ParsecAdmin.ClientRepository()).GetQuery.FirstOrDefault
+
+            Me.Fascicoli = Nothing
+
+            Me.ResettaFiltro()
+
+            Me.FascicoliGridView.DataSource = Nothing
+            Me.FascicoliGridView.DataBind()
+
+            'IMPOSTO L'ORDINAMENTO PREDEFINITO
+            Dim sortExpr As New Telerik.Web.UI.GridSortExpression()
+            sortExpr.FieldName = "DataApertura"
+            sortExpr.SortOrder = Telerik.Web.UI.GridSortOrder.Ascending
+            Me.FascicoliGridView.MasterTableView.SortExpressions.AddSortExpression(sortExpr)
+
+            Me.CaricaTipologiaFascicoli()
+
+            Me.FascicoliGridView.GroupingSettings.CaseSensitive = False
+
+            Dim limitePagine = GetlimiteNumeroPagineRicerca()
+            If (limitePagine = -1) Then
+                Me.NoPaging.Visible = False
+            End If
+
+            If (Not Me.isAlive) Then
+                ParsecUtility.Utility.MessageBox("Connessione col Modulo Archivio non trovata.", False)
+                Me.EnteConservatoreAttivo = Nothing
+                Exit Sub
+            End If
+
+            Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+            Dim getEnteSoapRequest As New wsConservazione.SoapGetEnteConservatoreRequest
+            getEnteSoapRequest.codiceLicenza = AmministrazioneTitolare.CodLicenza
+            Dim enteConservatoreAttivo = wsConservazioneSoap.getEnteConservatoreAttivo(getEnteSoapRequest)
+            If (enteConservatoreAttivo.messaggioErrore <> String.Empty) Then
+                ParsecUtility.Utility.MessageBox(enteConservatoreAttivo.messaggioErrore, False)
+                Exit Sub
+            Else
+                Me.EnteConservatoreAttivo = enteConservatoreAttivo.ListaEntiConservatori(0)
+            End If
+
+        End If
+
+
+    End Sub
+
+    Protected Sub Page_LoadComplete(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.LoadComplete
+        'Me.TitoloElencoAttiAmministrativiLabel.Text = "Elenco Fascicoli&nbsp;&nbsp;&nbsp;" & If(Me.Fascicoli.Count > 0, "( " & Me.Fascicoli.Count.ToString & " )", "")
+        Me.ConservaFascicoliImageButton.Enabled = Me.FascicoliGridView.SelectedItems.Count > 0
+    End Sub
+
+#End Region
+
+#Region "EVENTI GRIGLIE"
+
+    Protected Sub FascicoliGridView_NeedDataSource(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridNeedDataSourceEventArgs) Handles FascicoliGridView.NeedDataSource
+        If Me.Fascicoli Is Nothing Then
+            Dim filtro = Me.GetFiltro
+            If Not filtro.Inviati AndAlso Not filtro.DaInviare AndAlso Not filtro.Archiviati Then
+                Me.Fascicoli = New List(Of FascicoloConservazione)
+            Else
+                Me.Fascicoli = Me.GetFascicoliDaConservare(Me.GetFiltro)
+            End If
+        End If
+        Me.FascicoliGridView.DataSource = Me.Fascicoli
+    End Sub
+
+    Protected Sub FascicoliGridView_ItemCommand(sender As Object, e As Telerik.Web.UI.GridCommandEventArgs) Handles FascicoliGridView.ItemCommand
+        If e.CommandName = Telerik.Web.UI.RadGrid.ExpandCollapseCommandName AndAlso Not e.Item.Expanded Then
+            Dim parentItem As Telerik.Web.UI.GridDataItem = CType(e.Item, Telerik.Web.UI.GridDataItem)
+            Dim innerGrid As Telerik.Web.UI.RadGrid = CType(parentItem.ChildItem.FindControl("DocumentiGridView"), Telerik.Web.UI.RadGrid)
+            innerGrid.Rebind()
+        End If
+        Select Case e.CommandName
+            Case "Anteprima"
+                Me.VisualizzaFascicolo(e.Item)
+            Case "SbloccoFascicolo"
+                Me.SbloccaFascicolo(e.Item)
+        End Select
+    End Sub
+
+    Protected Sub FascicoliGridView_ItemCreated(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridItemEventArgs) Handles FascicoliGridView.ItemCreated
+        If TypeOf e.Item Is GridNestedViewItem Then
+            AddHandler CType(e.Item.FindControl("DocumentiGridView"), RadGrid).NeedDataSource, New GridNeedDataSourceEventHandler(AddressOf Me.DocumentiGridView_NeedDataSource)
+            AddHandler CType(e.Item.FindControl("DocumentiGridView"), RadGrid).ItemDataBound, New GridItemEventHandler(AddressOf Me.DocumentiGridView_ItemDataBound)
+            AddHandler CType(e.Item.FindControl("DocumentiGridView"), RadGrid).ItemCommand, New GridCommandEventHandler(AddressOf Me.DocumentiGridView_ItemCommand)
+        End If
+
+        If TypeOf e.Item Is GridDataItem Then
+            AddHandler e.Item.PreRender, AddressOf DocumentiGridView_ItemPreRender
+        End If
+
+        If TypeOf e.Item Is GridFilteringItem Then
+            e.Item.Style.Add("position", "relative")
+            e.Item.Style.Add("top", "expression(this.offsetParent.scrollTop)")
+            e.Item.Style.Add("z-index", "99")
+        End If
+
+        If TypeOf e.Item Is GridHeaderItem Then
+            e.Item.Style.Add("position", "relative")
+            e.Item.Style.Add("top", "expression(this.offsetParent.scrollTop)")
+            e.Item.Style.Add("z-index", "99")
+            e.Item.Style.Add("background-color", "White")
+        End If
+
+        If TypeOf e.Item Is Telerik.Web.UI.GridPagerItem Then
+            Dim pageSizeComboBox As RadComboBox = CType(e.Item.FindControl("PageSizeComboBox"), RadComboBox)
+            pageSizeComboBox.Visible = False
+            Dim changePageSizelbl As Label = CType(e.Item.FindControl("ChangePageSizeLabel"), Label)
+            changePageSizelbl.Visible = False
+
+        End If
+
+    End Sub
+
+    Private Function GetEnabledCheckBoxCount() As Integer
+        Dim res As Integer = 0
+        Dim enabledRow = (From item In Me.FascicoliGridView.MasterTableView.Items.Cast(Of GridDataItem)()
+                                Where CType(item.FindControl("SelectCheckBox"), CheckBox).Enabled
+                                Select item).ToList
+
+        res = enabledRow.Count
+        Return res
+    End Function
+
+    Protected Sub FascicoliGridView_PreRender(ByVal sender As Object, ByVal e As EventArgs) Handles FascicoliGridView.PreRender
+        Dim headerItem As GridHeaderItem = CType(Me.FascicoliGridView.MasterTableView.GetItems(GridItemType.Header)(0), GridHeaderItem)
+        Dim count = Me.GetEnabledCheckBoxCount
+        If count > 0 Then
+            CType(headerItem.FindControl("SelectAllCheckBox"), CheckBox).Checked = (Me.FascicoliGridView.SelectedItems.Count = count)
+        End If
+        CType(headerItem.FindControl("SelectAllCheckBox"), CheckBox).Enabled = Me.FascicoliGridView.Items.Count > 0
+    End Sub
+
+    Protected Sub DocumentiGridView_ItemPreRender(ByVal sender As Object, ByVal e As EventArgs)
+        CType(CType(sender, GridDataItem)("CheckBoxTemplateColumn").FindControl("SelectCheckBox"), CheckBox).Checked = CType(sender, GridDataItem).Selected
+    End Sub
+
+    Protected Sub FascicoliGridView_ItemDataBound(sender As Object, e As Telerik.Web.UI.GridItemEventArgs) Handles FascicoliGridView.ItemDataBound
+
+        Dim sbloccoButton As ImageButton = Nothing
+
+        If TypeOf e.Item Is Telerik.Web.UI.GridPagerItem Then
+            Dim pagerItem = CType(e.Item, GridPagerItem)
+            Dim itemsCount = pagerItem.Paging.DataSourceCount
+            Me.TitoloElencoAttiAmministrativiLabel.Text = "Elenco Fascicoli " & If(itemsCount > 0, "( " & itemsCount.ToString & " )", "")
+        End If
+
+        If TypeOf e.Item Is Telerik.Web.UI.GridDataItem Then
+            Dim dataItem As Telerik.Web.UI.GridDataItem = e.Item
+
+            Dim fascicolo As FascicoloConservazione = CType(e.Item.DataItem, FascicoloConservazione)
+
+            If TypeOf dataItem("SbloccoFascicolo").Controls(0) Is ImageButton Then
+                sbloccoButton = CType(dataItem("SbloccoFascicolo").Controls(0), ImageButton)
+
+                If fascicolo.DaInviare And Not fascicolo.InviatoArchivio Then
+                    sbloccoButton.ImageUrl = "~\images\vuoto.png"
+                    sbloccoButton.Attributes.Add("onclick", "return false;")
+                    sbloccoButton.ToolTip = "Fascicolo da inviare al Modulo Archivio."
+                Else
+                    If fascicolo.Impacchettato And Not fascicolo.InviatoArchivio Then
+                        sbloccoButton.ImageUrl = "~\images\Lock_16.png"
+                        sbloccoButton.Attributes.Add("onclick", "return false;")
+                        sbloccoButton.ToolTip = "Tutti i Documenti del Fascicolo risultano impachettati: impossibile sbloccarlo."
+                    ElseIf fascicolo.Impacchettato And fascicolo.InviatoArchivio Then
+                        sbloccoButton.ImageUrl = "~\images\unLock_16.png"
+                        sbloccoButton.ToolTip = "Sblocca parzialmente il Fascicolo: verranno sbloccati solo alcuni documenti."
+                    ElseIf Not fascicolo.Impacchettato And fascicolo.InviatoArchivio Then
+                        sbloccoButton.ImageUrl = "~\images\unLock_16.png"
+                        sbloccoButton.ToolTip = "Sblocca totalmente il Fascicolo: verranno sbloccati tutti i documenti."
+                    End If
+                End If
+
+
+            End If
+
+        End If
+
+    End Sub
+
+    Protected Sub ToggleRowSelection(ByVal sender As Object, ByVal e As EventArgs)
+        CType(CType(sender, CheckBox).NamingContainer, GridItem).Selected = CType(sender, CheckBox).Checked
+    End Sub
+
+    Protected Sub ToggleSelectedState(ByVal sender As Object, ByVal e As EventArgs)
+        Dim headerCheckBox As CheckBox = CType(sender, CheckBox)
+        For Each dataItem As GridDataItem In Me.FascicoliGridView.MasterTableView.Items
+            Dim chk As CheckBox = CType(dataItem.FindControl("SelectCheckBox"), CheckBox)
+            If chk.Enabled Then
+                chk.Checked = headerCheckBox.Checked
+                dataItem.Selected = headerCheckBox.Checked
+            End If
+        Next
+    End Sub
+
+    'GRIGLIA ALLEGATI DOCUMENTI
+
+    Protected Sub DocumentiGridView_ItemCommand(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridCommandEventArgs)
+        Select Case e.CommandName
+            Case "SelectDocumento"
+                Me.VisualizzaDocumento(e.Item)
+            Case "ConservaDocumentoSingolo"
+                Me.ConservaDocumento(e.Item)
+        End Select
+    End Sub
+
+    Protected Sub DocumentiGridView_NeedDataSource(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridNeedDataSourceEventArgs)
+        Dim parentItem As Telerik.Web.UI.GridDataItem = CType(CType(CType(sender, Telerik.Web.UI.RadGrid).NamingContainer, Telerik.Web.UI.GridNestedViewItem).ParentItem, Telerik.Web.UI.GridDataItem)
+        Dim id As Integer = parentItem.GetDataKeyValue("IdFascicolo")
+        CType(sender, Telerik.Web.UI.RadGrid).DataSource = Me.GetAllegatiByFascicolo(id)
+    End Sub
+
+    Protected Sub DocumentiGridView_ItemCreated(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridItemEventArgs)
+        If TypeOf e.Item Is Telerik.Web.UI.GridPagerItem Then
+            Dim pageSizeComboBox As RadComboBox = CType(e.Item.FindControl("PageSizeComboBox"), RadComboBox)
+            pageSizeComboBox.Visible = False
+            Dim changePageSizelbl As Label = CType(e.Item.FindControl("ChangePageSizeLabel"), Label)
+            changePageSizelbl.Visible = False
+        End If
+    End Sub
+
+    Protected Sub DocumentiGridView_ItemDataBound(sender As Object, e As Telerik.Web.UI.GridItemEventArgs)
+
+        If TypeOf e.Item Is Telerik.Web.UI.GridDataItem Then
+            Dim dataItem As Telerik.Web.UI.GridDataItem = e.Item
+
+            Dim conservaDocumentoSingoloButton As ImageButton = Nothing
+            Dim statoButton As ImageButton = Nothing
+
+            Dim IdDocumentoWS As Integer? = e.Item.OwnerTableView.DataKeyValues(e.Item.ItemIndex)("IdDocumentoWS")
+            Dim IdPacchettoVersamento As Integer? = e.Item.OwnerTableView.DataKeyValues(e.Item.ItemIndex)("IdPacchettoVersamento")
+
+
+            If TypeOf dataItem("ConservaDocumentoSingolo").Controls(0) Is ImageButton Then
+                statoButton = CType(dataItem("Stato").Controls(0), ImageButton)
+                conservaDocumentoSingoloButton = CType(dataItem("ConservaDocumentoSingolo").Controls(0), ImageButton)
+
+                statoButton.Enabled = False
+
+                If Not IdDocumentoWS.HasValue Then
+                    'vuoto.png
+                    conservaDocumentoSingoloButton.ImageUrl = "~\images\Archive16.png"
+                    'sbloccoButton.Attributes.Add("onclick", "return false;")
+                    conservaDocumentoSingoloButton.ToolTip = "Invia al Modulo Archivio."
+
+                    statoButton.ImageUrl = "~\images\pBlue16.png"
+                    statoButton.ToolTip = "Documento da inviare al Modulo Archivio."
+
+                Else
+
+                    If IdPacchettoVersamento.HasValue Then
+                        conservaDocumentoSingoloButton.ImageUrl = "~\images\Lock_16.png"
+                        conservaDocumentoSingoloButton.Attributes.Add("onclick", "return false;")
+                        conservaDocumentoSingoloButton.ToolTip = "Documento già impacchettato: impossibile sbloccarlo."
+
+                        statoButton.ImageUrl = "~\images\pRosso16.png"
+                        statoButton.ToolTip = "Documento già inviato al Modulo Archivio ed Impacchettato."
+                    Else
+                        conservaDocumentoSingoloButton.ImageUrl = "~\images\unLock_16.png"
+                        conservaDocumentoSingoloButton.ToolTip = "Sblocca Documento."
+
+                        statoButton.ImageUrl = "~\images\pVerde16.png"
+                        statoButton.ToolTip = "Documento già inviato al Modulo Archivio e non Impacchettato."
+                    End If
+
+                End If
+
+            End If
+
+            'If TypeOf dataItem("StatoDocumento").Controls(0) Is ImageButton Then
+            '    Dim btn As ImageButton = Nothing
+            '    btn = CType(dataItem("StatoDocumento").Controls(0), ImageButton)
+            '    btn.Attributes.Add("onclick", "return false")
+            '    btn.Style.Add("cursor", "default")
+            '    Dim definitivo As Boolean = e.Item.OwnerTableView.DataKeyValues(e.Item.ItemIndex)("Definitivo")
+            '    'Dim docfasc As ParsecAdmin.FascicoloDocumento = CType(e.Item.DataItem, ParsecAdmin.FascicoloDocumento)
+            '    If (definitivo) Then
+            '        btn.ImageUrl = "~/images/pVerde16.png"
+            '        btn.ToolTip = "Stato = Definitivo"
+            '    Else
+            '        btn.ImageUrl = "~/images/pArancio16.png"
+            '        btn.ToolTip = "Stato = Provvisorio"
+            '    End If
+            'End If
+
+        End If
+    End Sub
+
+    'FINE GRIGLIA ALLEGATI DOCUMENTI
+
+#End Region
+
+#Region "AZIONI PANNELLO FILTRO"
+
+    Private Sub ResettaFiltro()
+        For Each col As GridColumn In Me.FascicoliGridView.MasterTableView.Columns
+            col.CurrentFilterValue = String.Empty
+        Next
+        Me.FascicoliGridView.MasterTableView.FilterExpression = String.Empty
+        Me.DataInizioTextBox.SelectedDate = Nothing
+        Me.DataFineTextBox.SelectedDate = Nothing
+        'Me.OggettoTextBox.Text = String.Empty
+        Me.txtDataChiusuraIniziale.SelectedDate = Nothing
+        Me.txtDataChiusuraFinale.SelectedDate = Nothing
+        'Me.txtNumeroRegistroIniziale.Text = String.Empty
+        'Me.txtNumeroRegistroFinale.Text = String.Empty
+        Me.DaInviareCheckBox.Checked = True
+        Me.InviateCheckBox.Checked = False
+        Me.ArchiviateCheckBox.Checked = False
+        Me.DataInizioTextBox.SelectedDate = New Date(GetAnnoEsercizio, 1, 1)
+        Me.DataFineTextBox.SelectedDate = Now
+        Me.TipologiaFascicoloComboBox.SelectedIndex = 0
+    End Sub
+
+    Private Function GetFiltro() As FiltroFascicolo
+        Dim filtro As New FiltroFascicolo
+        filtro.Inviati = Me.InviateCheckBox.Checked
+        filtro.DaInviare = Me.DaInviareCheckBox.Checked
+        filtro.Archiviati = Me.ArchiviateCheckBox.Checked
+        filtro.DataAperturaInizio = Me.DataInizioTextBox.SelectedDate
+        filtro.DataAperturaFine = Me.DataFineTextBox.SelectedDate
+        filtro.DataChusuraInizio = Me.txtDataChiusuraIniziale.SelectedDate
+        filtro.DataChiusuraFine = Me.txtDataChiusuraFinale.SelectedDate
+        'filtro.NumeroRegistroInizio = Me.txtNumeroRegistroIniziale.Value
+        'filtro.NumeroRegistroFine = Me.txtNumeroRegistroFinale.Value
+        filtro.TipoFascicolo = Me.TipologiaFascicoloComboBox.SelectedValue
+        'filtro.Oggetto = Me.OggettoTextBox.Text
+        Return filtro
+    End Function
+
+    Private Sub AggiornaGriglia()
+        Me.Fascicoli = Nothing
+        Me.FascicoliGridView.Rebind()
+    End Sub
+
+    Protected Sub FiltraImageButton_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles FiltraImageButton.Click
+        Me.AggiornaGriglia()
+    End Sub
+
+    Protected Sub AnnullaFiltroImageButton_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles AnnullaFiltroImageButton.Click
+        Me.ResettaFiltro()
+        Me.AggiornaGriglia()
+    End Sub
+
+#End Region
+
+#Region "METODI PRIVATI"
+
+    Private Sub CaricaTipologiaFascicoli()
+        Dim dati As New List(Of ParsecAdmin.KeyValue)
+        dati.Add(New ParsecAdmin.KeyValue With {.Id = TipologiaFascicolo.ProcedimentoAmministrativo, .Descrizione = "Procedimento"})
+        dati.Add(New ParsecAdmin.KeyValue With {.Id = TipologiaFascicolo.Affare, .Descrizione = "Affare"})
+
+        Me.TipologiaFascicoloComboBox.DataSource = dati
+        Me.TipologiaFascicoloComboBox.DataTextField = "Descrizione"
+        Me.TipologiaFascicoloComboBox.DataValueField = "Id"
+        Me.TipologiaFascicoloComboBox.DataBind()
+        'Commentare in caso di combo con le check
+        Me.TipologiaFascicoloComboBox.Items.Insert(0, New Telerik.Web.UI.RadComboBoxItem("", "0"))
+        Me.TipologiaFascicoloComboBox.SelectedIndex = 0
+    End Sub
+
+    Private Function GetFascicoliDaConservare(ByVal filtro As FiltroFascicolo) As List(Of FascicoloConservazione)
+
+        Dim documenti As New ParsecAdmin.FascicoloDocumentoRepository
+        Dim documentiProtocollatiConservati As New ParsecAdmin.DocumentoConservazioneRepository(documenti.Context)
+
+        Dim viewConservati = (From documento In documenti.GetQuery.Where(Function(w) w.Stato Is Nothing And w.TipoDocumento <> ParsecAdmin.TipoModulo.IOL)
+                                        Group Join documentoConservato In documentiProtocollatiConservati.GetQuery On documentoConservato.idDocumento Equals documento.IdDocumentoWS
+                                        Into elencoDocumentiConservati = Group
+                                        From documentoConservato In elencoDocumentiConservati.DefaultIfEmpty
+                                        Let IdPacchettoVersamento = If(documentoConservato Is Nothing, Nothing, documentoConservato.idPacchettoVersamento)
+                                        Select documento, IdPacchettoVersamento).Distinct
+
+        Dim fascicoli As New ParsecAdmin.FascicoliRepository(documenti.Context)
+
+        Dim view = From documento In viewConservati
+                    Join fascicolo In fascicoli.GetQuery On fascicolo.Id Equals documento.documento.IdFascicolo
+                    Where (fascicolo.Stato Is Nothing And Not fascicolo.DataChiusura Is Nothing And documento.documento.Stato Is Nothing)
+                    Select fascicolo, documento
+        'And  (documento.documento.TipoDocumento = ParsecAdmin.ModuliEnumeration.AttiDecisionali Or documento.documento.TipoDocumento = ParsecAdmin.ModuliEnumeration.Protocollo)
+
+        If filtro.DataAperturaInizio.HasValue Then
+            Dim d As Date = filtro.DataAperturaInizio.Value
+            Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 0, 0, 0, 0)
+            view = view.Where(Function(c) c.fascicolo.DataApertura >= newDate)
+        End If
+
+        If filtro.DataAperturaFine.HasValue Then
+            Dim d As Date = filtro.DataAperturaFine.Value
+            Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 23, 59, 59, 999)
+            view = view.Where(Function(c) c.fascicolo.DataApertura <= newDate)
+        End If
+
+        If filtro.DataChusuraInizio.HasValue Then
+            Dim d As Date = filtro.DataChusuraInizio.Value
+            Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 0, 0, 0, 0)
+            view = view.Where(Function(c) c.fascicolo.DataChiusura >= newDate)
+        End If
+
+        If filtro.DataChiusuraFine.HasValue Then
+            Dim d As Date = filtro.DataChiusuraFine.Value
+            Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 23, 59, 59, 999)
+            view = view.Where(Function(c) c.fascicolo.DataChiusura <= newDate)
+        End If
+
+        If filtro.NumeroRegistroInizio.HasValue Then
+            view = view.Where(Function(c) c.fascicolo.NumeroRegistro >= filtro.NumeroRegistroInizio.Value)
+        End If
+        If filtro.NumeroRegistroFine.HasValue Then
+            view = view.Where(Function(c) c.fascicolo.NumeroRegistro <= filtro.NumeroRegistroFine.Value)
+        End If
+
+        If filtro.Oggetto <> String.Empty Then
+            view = view.Where(Function(c) c.fascicolo.Oggetto.Trim.ToLower.Contains(filtro.Oggetto.Trim.ToLower))
+        End If
+
+        If filtro.TipoFascicolo > 0 Then
+            view = view.Where(Function(c) c.fascicolo.IdTipologiaFascicolo = filtro.TipoFascicolo)
+        End If
+
+        Dim listaFascicoli As New List(Of FascicoloConservazione)
+        Dim FascicoloConservazione As New FascicoloConservazione
+        For Each item In view.Select(Function(s) s.fascicolo).Distinct
+            FascicoloConservazione = New FascicoloConservazione
+            FascicoloConservazione.IdFascicolo = item.Id
+            FascicoloConservazione.CodiceFascicoloSistema = item.CodiceFascicoloSistema
+            FascicoloConservazione.CodiceFascicoloUtente = item.CodiceFascicoloUtente
+            FascicoloConservazione.dataApertura = item.DataApertura
+            FascicoloConservazione.dataChiusura = item.DataChiusura
+            FascicoloConservazione.oggetto = item.Oggetto
+            FascicoloConservazione.responsabile = item.StrutturaUtenteResponsabile
+            FascicoloConservazione.numeroRegistro = item.NumeroRegistro
+            Dim docs = view.Where(Function(w) w.documento.documento.IdFascicolo = FascicoloConservazione.IdFascicolo).Select(Function(s) s.documento)
+            Dim inviatoArchivio = False
+            Dim inviatoImpacchettato = False
+            Dim NonInviato = False
+            Dim listaDocumentoForFascicolo As New List(Of FascicoloDocumento)
+            Dim documentoToAdd As New FascicoloDocumento
+
+            Dim contaInviatiArchivio As Integer = 0
+            Dim contaImpacchetatti As Integer = 0
+            Dim contaNonInviati As Integer = 0
+
+            For Each doc In docs
+
+                If (doc.documento.TipoDocumento <> ParsecAdmin.TipoModulo.IOL) Then
+                    documentoToAdd = New FascicoloDocumento
+                    documentoToAdd.Id = doc.documento.Id
+                    documentoToAdd.CodiceDocumento = doc.documento.CodiceDocumento
+                    documentoToAdd.DataDocumento = doc.documento.DataDocumento
+                    documentoToAdd.Definitivo = doc.documento.Definitivo
+                    documentoToAdd.Fase = doc.documento.Fase
+                    documentoToAdd.IdDocumento = doc.documento.IdDocumento
+                    documentoToAdd.IdDocumentoWS = doc.documento.IdDocumentoWS 'If(doc.documento.IdDocumentoWS Is Nothing, -1, doc.documento.IdDocumentoWS)
+                    documentoToAdd.IdFascicolo = doc.documento.IdFascicolo
+                    documentoToAdd.IdPacchettoVersamento = doc.IdPacchettoVersamento 'If(doc.IdPacchettoVersamento Is Nothing, -1, doc.IdPacchettoVersamento)
+                    documentoToAdd.NomeDocumento = doc.documento.NomeDocumento
+                    documentoToAdd.NomeDocumentoOriginale = doc.documento.NomeDocumentoOriginale
+                    documentoToAdd.NumeroDocumento = doc.documento.NumeroDocumento
+                    documentoToAdd.path = doc.documento.path
+                    documentoToAdd.Stato = doc.documento.Stato
+                    documentoToAdd.TipoDocumento = doc.documento.TipoDocumento
+
+                    If Not doc.documento.Fase Is Nothing Then
+                        Select Case doc.documento.Fase
+                            Case "I"
+                                documentoToAdd.DescrizioneFase = "INIZIALE"
+                            Case "F"
+                                documentoToAdd.DescrizioneFase = "FINALE"
+                        End Select
+                    End If
+
+                    If Not doc.documento.IdDocumentoWS Is Nothing Then
+                        'contaInviatiArchivio = contaInviatiArchivio + 1
+                        If Not doc.IdPacchettoVersamento Is Nothing Then
+                            contaImpacchetatti = contaImpacchetatti + 1
+                        Else
+                            contaInviatiArchivio = contaInviatiArchivio + 1
+                        End If
+                    Else
+                        'non inviato
+                        contaNonInviati = contaNonInviati + 1
+                    End If
+
+                    'If Not doc.IdPacchettoVersamento Is Nothing Then
+                    '    contaImpacchetatti = contaImpacchetatti + 1
+                    'Else
+                    '    contaNonInviati = contaNonInviati + 1
+                    'End If
+
+
+                    Dim DescrizioneTipoDocumento As String = ""
+                    Select Case doc.documento.TipoDocumento
+                        Case ParsecAdmin.TipoModulo.SEP
+                            DescrizioneTipoDocumento = "GEN"
+                        Case ParsecAdmin.TipoModulo.PRO
+                            DescrizioneTipoDocumento = "PRO"
+                        Case ParsecAdmin.TipoModulo.ATT
+                            DescrizioneTipoDocumento = "ATT"
+                        Case ParsecAdmin.TipoModulo.CNT
+                            DescrizioneTipoDocumento = "CNT"
+                    End Select
+                    documentoToAdd.DescrizioneTipoDocumento = DescrizioneTipoDocumento
+
+                    listaDocumentoForFascicolo.Add(documentoToAdd)
+                End If
+
+
+            Next
+
+            Dim totaliDocumentiPerFascicolo = docs.Count
+
+
+            If (contaNonInviati > 0) Then
+                FascicoloConservazione.DaInviare = True
+            Else
+                FascicoloConservazione.DaInviare = False
+            End If
+
+            If (contaInviatiArchivio > 0) Then
+                'li ho mandati tutti al modulo archivio
+                FascicoloConservazione.InviatoArchivio = True
+            Else
+                FascicoloConservazione.InviatoArchivio = False
+            End If
+
+            If (contaImpacchetatti > 0) Then
+                'li ho mandati tutti al modulo archivio
+                FascicoloConservazione.Impacchettato = True
+
+                'If ((contaInviatiArchivio + contaNonInviati) < totaliDocumentiPerFascicolo) Then
+                '    FascicoloConservazione.InviatoArchivio = True
+                'ElseIf contaImpacchetatti = totaliDocumentiPerFascicolo Then
+                '    FascicoloConservazione.InviatoArchivio = False
+                '    FascicoloConservazione.Impacchettato = True
+                'End If
+            Else
+                FascicoloConservazione.Impacchettato = False
+            End If
+
+
+            'FascicoloConservazione.InviatoArchivio = inviatoArchivio
+            'FascicoloConservazione.Impacchettato = inviatoImpacchettato
+            FascicoloConservazione.listaDocumenti = listaDocumentoForFascicolo
+            listaFascicoli.Add(FascicoloConservazione)
+
+        Next
+
+        'SOLO INVIATI
+        If filtro.Inviati AndAlso Not filtro.DaInviare And Not filtro.Archiviati Then
+            'c.DaInviare = False And c.Impacchettato = False And
+            listaFascicoli = listaFascicoli.Where(Function(c) c.InviatoArchivio = True).ToList
+            'SOLO DA INVIARE
+        ElseIf Not filtro.Inviati AndAlso filtro.DaInviare And Not filtro.Archiviati Then
+            'c.InviatoArchivio = False And c.Impacchettato = False And
+            listaFascicoli = listaFascicoli.Where(Function(c) c.DaInviare = True).ToList
+            'INVIATI + DA INVIARE
+        ElseIf filtro.Inviati AndAlso filtro.DaInviare And Not filtro.Archiviati Then
+            'And c.Impacchettato = False
+            listaFascicoli = listaFascicoli.Where(Function(c) (c.InviatoArchivio = True Or c.DaInviare = True)).ToList
+            'SOLO ARCHIVIATI
+        ElseIf filtro.Archiviati AndAlso Not filtro.Inviati AndAlso Not filtro.DaInviare Then
+            'c.DaInviare = False And c.InviatoArchivio = False And 
+            listaFascicoli = listaFascicoli.Where(Function(c) c.Impacchettato = True).ToList
+            'INVIATI + ARCHIVIATI
+        ElseIf filtro.Archiviati AndAlso filtro.Inviati AndAlso Not filtro.DaInviare Then
+            'c.DaInviare = False And
+            listaFascicoli = listaFascicoli.Where(Function(c) (c.InviatoArchivio = True Or c.Impacchettato = True)).ToList
+            'DA INVIARE + ARCHIVIATI
+        ElseIf filtro.Archiviati AndAlso Not filtro.Inviati AndAlso filtro.DaInviare Then
+            'And c.InviatoArchivio = False
+            listaFascicoli = listaFascicoli.Where(Function(c) (c.DaInviare = True Or c.Impacchettato = True)).ToList
+            'TUTTI
+        ElseIf filtro.Inviati AndAlso filtro.DaInviare AndAlso filtro.Archiviati Then
+            'listaFascicoli = listaFascicoli.Where(Function(c) c.Impacchettato = False)
+        End If
+
+        Return listaFascicoli
+
+    End Function
+
+    'Protected Sub TrovaClassificazioneImageButton_Click(ByVal sender As Object, ByVal e As System.Web.UI.ImageClickEventArgs) Handles TrovaClassificazioneImageButton.Click
+
+    '    Dim pageUrl As String = "~/UI/Amministrazione/pages/search/RicercaClassificazionePage.aspx"
+    '    Dim queryString As New Hashtable
+    '    queryString.Add("obj", Me.AggiornaClassificazioneImageButton.ClientID)
+    '    ParsecUtility.Utility.ShowPopup(pageUrl, 800, 600, queryString, False)
+
+    '    Dim parametriPagina As New Hashtable
+    '    parametriPagina.Add("tipoSelezione", 0) 'singola
+    '    parametriPagina.Add("livelliSelezionabili", "2")
+    '    ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+
+    'End Sub
+
+    'Protected Sub AggiornaClassificazioneImageButton_Click(ByVal sender As Object, ByVal e As System.Web.UI.ImageClickEventArgs) Handles AggiornaClassificazioneImageButton.Click
+    '    If Not Session("ClassificazioniSelezionate") Is Nothing Then
+    '        Dim classificazioniSelezionate As List(Of ParsecAdmin.TitolarioClassificazione) = Session("ClassificazioniSelezionate")
+    '        Dim idClassificazione As Integer = classificazioniSelezionate.First.Id
+    '        Dim codici = (New ParsecAdmin.TitolarioClassificazioneRepository).GetCodiciClassificazione(idClassificazione, 1)
+    '        Dim classificazioneCompleta As String = codici & " " & classificazioniSelezionate.First.Descrizione
+    '        Me.ClassificazioneTextBox.Text = classificazioneCompleta
+    '        Me.IdClassificazioneTextBox.Text = idClassificazione.ToString
+    '        Session("ClassificazioniSelezionate") = Nothing
+    '    End If
+    'End Sub
+
+    'Protected Sub EliminaClassificazioneImageButton_Click(ByVal sender As Object, ByVal e As System.Web.UI.ImageClickEventArgs) Handles EliminaClassificazioneImageButton.Click
+    '    Me.ClassificazioneTextBox.Text = String.Empty
+    '    Me.IdClassificazioneTextBox.Text = String.Empty
+    '    'Me.CodiceFascicoloSistemaTextBox.Text = String.Empty
+    '    'Me.CodiceClassificazioneTextBox.Text = String.Empty
+    'End Sub
+
+    Private Sub VisualizzaFascicolo(ByVal item As GridDataItem)
+        'ParsecUtility.Utility.MessageBox("Funzionalità non ancora implementata!", False)
+        Dim id As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("IdFascicolo")
+        Dim pageUrl As String = "~/UI/Amministrazione/pages/user/FascicoliPage.aspx"
+        Dim queryString As New Hashtable
+        'queryString.Add("obj", Me.ModificaFascicoloImageButton.ClientID)
+        queryString.Add("mode", "read")
+        Dim parametriPagina As New Hashtable
+        parametriPagina.Add("IdFascicolo", id)
+        ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+        ParsecUtility.Utility.ShowPopup(pageUrl, 900, 600, queryString, False)
+    End Sub
+
+    Private Sub ConservaDocumento(ByVal item As Telerik.Web.UI.GridDataItem)
+        Dim idFascicolo As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("IdFascicolo")
+        Dim idDocumento As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+        Dim fascicolo = Me.Fascicoli.Where(Function(c) c.IdFascicolo = idFascicolo).FirstOrDefault
+        Dim fascicoloAmministrazioniRepository As New ParsecAdmin.FascicoloAmministrazionePartecipanteRepository
+        Dim codiciIPAAmministrazioni = fascicoloAmministrazioniRepository.GetQuery().Where(Function(w) w.IdFascicolo = fascicolo.IdFascicolo).Select(Function(s) s.CodiceIpa).ToList
+        Dim listaIPAAmministrazioni = String.Join(";", codiciIPAAmministrazioni.ToArray())
+        fascicolo.amministrazioniPartecipanti = listaIPAAmministrazioni
+        Dim documento = fascicolo.listaDocumenti.Where(Function(w) w.Id = idDocumento).FirstOrDefault
+        Dim messaggioErrore = ComandiInviaConservazione(fascicolo, documento)
+        If (Not messaggioErrore.errore) Then
+            Me.infoOperazioneHidden.Value = messaggioErrore.messaggio
+        Else
+            ParsecUtility.Utility.MessageBox(messaggioErrore.messaggio, False)
+        End If
+        AggiornaGriglia()
+    End Sub
+
+    Private Function ComandiInviaConservazione(ByVal fascicolo As FascicoloConservazione, ByVal documento As FascicoloDocumento) As MessaggioOperazione
+        Dim messaggio As New MessaggioOperazione
+        Select Case documento.TipoDocumento
+            Case 1 'Documento generico
+                'ParsecUtility.Utility.MessageBox("Funzionalità non ancora implementata!", False)
+                If (documento.IdDocumentoWS Is Nothing) Then
+                    'devo conservare il documento
+                    messaggio = ConservaDocumentoGenerico(fascicolo, documento)
+                Else
+                    'cerco di sbloccare il documento
+                    messaggio = SbloccaDocumentoSingolo(documento.TipoDocumento, documento.Id)
+                End If
+            Case ParsecAdmin.TipoModulo.PRO
+                If (documento.IdDocumentoWS Is Nothing) Then
+                    'devo conservare il documento
+                    messaggio = ConservaProtocollo(fascicolo, documento)
+                Else
+                    'cerco di sbloccare il documento
+                    messaggio = SbloccaDocumentoSingolo(documento.TipoDocumento, documento.Id)
+                End If
+            Case ParsecAdmin.TipoModulo.ATT
+                If (documento.IdDocumentoWS Is Nothing) Then
+
+                    Dim documenti As New ParsecAtt.DocumentoRepository
+                    Dim documentoAtto = documenti.GetFullById(documento.IdDocumento)
+                    documenti.Dispose()
+
+                    'devo conservare il documento
+                    If (documentoAtto.ToString.ToLower.Contains("proposta")) Then
+                        'da realizzare come documento generico
+                        'ParsecUtility.Utility.MessageBox("Funzionalità non ancora implementata!", False)
+                        messaggio = ConservaPropostaAmministrativa(fascicolo, documento)
+                    Else
+                        messaggio = ConservaAttoAmministrativo(fascicolo, documento)
+                    End If
+                Else
+                    'cerco di sbloccare il documento
+                    messaggio = SbloccaDocumentoSingolo(documento.TipoDocumento, documento.Id)
+                End If
+            Case ParsecAdmin.TipoModulo.IOL
+                'TO DO
+                ParsecUtility.Utility.MessageBox("Funzionalità non ancora implementata!", False)
+            Case ParsecAdmin.TipoModulo.CNT
+                If (documento.IdDocumentoWS Is Nothing) Then
+                    'devo conservare il documento
+                    messaggio = ConservaContratto(fascicolo, documento)
+                Else
+                    'cerco di sbloccare il documento
+                    messaggio = SbloccaDocumentoSingolo(documento.TipoDocumento, documento.Id)
+                End If
+        End Select
+
+        Return messaggio
+
+    End Function
+
+    Private Sub VisualizzaDocumento(ByVal item As Telerik.Web.UI.GridDataItem)
+        Dim idFascicolo As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("IdFascicolo")
+        Dim idDocumento As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+        'Dim documentiFascicolo As New ParsecAdmin.FascicoloDocumentoRepository
+        Dim fascicolo = Me.Fascicoli.Where(Function(c) c.IdFascicolo = idFascicolo).FirstOrDefault
+        Dim documento = fascicolo.listaDocumenti.Where(Function(w) w.Id = idDocumento).FirstOrDefault
+        Select Case documento.TipoDocumento
+            Case 1 'Documento generico
+                Me.DownloadFile(documento)
+            Case ParsecAdmin.TipoModulo.PRO
+                Me.VisualizzaRegistrazione(documento)
+            Case ParsecAdmin.TipoModulo.ATT
+                Me.VisualizzaAtto(documento.IdDocumento)
+            Case ParsecAdmin.TipoModulo.IOL
+                ParsecUtility.Utility.MessageBox("Funzionalità non ancora gestita", False)
+                'Me.VisualizzaIstanzaPratica(documento.IdDocumento)rvaprot
+            Case ParsecAdmin.TipoModulo.CNT
+                Me.VisualizzaContratto(documento)
+        End Select
+    End Sub
+
+    Private Sub VisualizzaIstanzaPratica(ByVal idDocumento As String)
+        Dim istanzePraticaOnline As New ParsecAdmin.IstanzaPraticaOnlineRepository
+        Dim istanzePratica = istanzePraticaOnline.Where(Function(c) c.Id = idDocumento).FirstOrDefault
+        istanzePraticaOnline.Dispose()
+        If Not istanzePratica Is Nothing Then
+            Dim parametriPagina As New Hashtable
+            Dim pageUrl As String = "~/UI/Amministrazione/pages/search/VisualizzaIstanzaPraticaPage.aspx"
+            parametriPagina.Add("Filtro", istanzePratica.Id)
+            ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+            ParsecUtility.Utility.ShowPopup(pageUrl, 940, 670, Nothing, False)
+        Else
+            ParsecUtility.Utility.MessageBox("L'istanza selezionata non esiste!", False)
+        End If
+
+    End Sub
+
+    Private Sub VisualizzaRegistrazione(ByVal documento As FascicoloDocumento)
+        If Not documento Is Nothing Then
+            Dim registrazioni As New ParsecPro.RegistrazioniRepository
+            Dim registrazione As ParsecPro.Registrazione = registrazioni.GetQuery.Where(Function(c) c.Id = documento.IdDocumento).FirstOrDefault
+            registrazioni.Dispose()
+            If Not registrazione Is Nothing Then
+                Dim pageUrl As String = "~/UI/Protocollo/pages/search/VisualizzaRegistrazionePage.aspx"
+                Dim queryString As New Hashtable
+                queryString.Add("filtro", registrazione.Id)
+                Dim parametriPagina As New Hashtable
+                parametriPagina.Add("Filtro", registrazione.Id)
+                ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+                ParsecUtility.Utility.ShowPopup(pageUrl, 940, 510, queryString, False)
+            Else
+                ParsecUtility.Utility.MessageBox("La registrazione selezionata non esiste!", False)
+            End If
+        End If
+    End Sub
+
+    Private Sub VisualizzaContratto(ByVal documento As FascicoloDocumento)
+        If Not documento Is Nothing Then
+            Dim contratti As New ParsecContratti.ContrattoRepository
+            Dim contratto As ParsecContratti.Contratto = contratti.GetQuery.Where(Function(c) c.idContratto = documento.IdDocumento).FirstOrDefault
+            contratti.Dispose()
+            If Not contratto Is Nothing Then
+                Dim pageUrl As String = "~/UI/Contratti/pages/search/VisualizzaContrattoPage.aspx"
+                Dim queryString As New Hashtable
+                'queryString.Add("filtro", registrazione.idContratto)
+                Dim parametriPagina As New Hashtable
+                parametriPagina.Add("Filtro", contratto.idContratto)
+                ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+                ParsecUtility.Utility.ShowPopup(pageUrl, 940, 510, queryString, False)
+            Else
+                ParsecUtility.Utility.MessageBox("La registrazione selezionata non esiste!", False)
+            End If
+        End If
+    End Sub
+
+    Private Sub DownloadFile(ByVal documento As FascicoloDocumento)
+        If Not documento Is Nothing Then
+            Dim pathDownload As String = String.Empty
+            'Se è un allegato temporaneo.
+            If documento.Id < 0 Then
+                'caso impossibile
+                ParsecUtility.Utility.MessageBox("Il documento selezionato non esiste!", False)
+                'pathDownload = System.Configuration.ConfigurationManager.AppSettings("PathDownload") & documento.NomeFileTemp
+            Else
+                pathDownload = System.Configuration.ConfigurationManager.AppSettings("PathDocumenti") & documento.path & documento.NomeDocumento
+            End If
+            Dim file As New IO.FileInfo(pathDownload)
+
+            If file.Exists Then
+                Session("AttachmentFullName") = file.FullName
+                Dim pageUrl As String = "~/UI/Amministrazione/pages/user/DownloadPage.aspx"
+                ParsecUtility.Utility.PageReload(pageUrl, False)
+            Else
+                ParsecUtility.Utility.MessageBox("Il documento selezionato non esiste!", False)
+            End If
+        End If
+    End Sub
+
+    Private Sub VisualizzaAtto(ByVal idDocumento As Integer)
+        Dim documenti As New ParsecAtt.DocumentoRepository
+        Dim documento As ParsecAtt.Documento = documenti.GetQuery.Where(Function(c) c.Id = idDocumento).FirstOrDefault
+        documenti.Dispose()
+        If Not documento Is Nothing Then
+            Dim queryString As New Hashtable
+            queryString.Add("Tipo", documento.IdTipologiaDocumento)
+            queryString.Add("Mode", "View")
+            queryString.Add("Procedura", "10")
+            Dim pageUrl As String = "~/UI/AttiDecisionali/pages/user/AttoAmministrativoPage.aspx"
+            Dim parametriPagina As New Hashtable
+            parametriPagina.Add("IdDocumentoIter", idDocumento)
+            ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+            ParsecUtility.Utility.ShowPopup(pageUrl, 930, 650, queryString, False)
+        Else
+            ParsecUtility.Utility.MessageBox("Il documento selezionato non esiste!", False)
+        End If
+
+    End Sub
+
+    Private Function GetAllegatiByFascicolo(ByVal idFascicolo As Integer) As IEnumerable
+        Dim fascicolo = Me.Fascicoli.Where(Function(w) w.IdFascicolo = idFascicolo).FirstOrDefault
+        If (Not fascicolo Is Nothing) Then
+            Return fascicolo.listaDocumenti
+        Else
+            Return Nothing
+        End If
+    End Function
+
+    Private Function GetlimiteNumeroPagineRicerca() As Integer
+        Dim limiteNumeroPAgine As Integer = -1
+        Dim parametri As New ParsecAdmin.ParametriRepository
+        Dim parametro As ParsecAdmin.Parametri = parametri.GetByName("limiteNumeroPaginazioneConservazione", ParsecAdmin.TipoModulo.CSZ)
+        If Not parametro Is Nothing Then
+            limiteNumeroPAgine = CInt(parametro.Valore)
+        End If
+        parametri.Dispose()
+        Return limiteNumeroPAgine
+    End Function
+
+    Private Function GetAnnoEsercizio() As Integer
+        Dim annoEsercizio As Integer = Now.Year
+        Dim parametri As New ParsecAdmin.ParametriRepository
+        Dim parametro As ParsecAdmin.Parametri = parametri.GetByName("AnnoCorrente", ParsecAdmin.TipoModulo.ATT)
+        If Not parametro Is Nothing Then
+            annoEsercizio = CInt(parametro.Valore)
+        End If
+        parametri.Dispose()
+        Return annoEsercizio
+    End Function
+
+    Protected Sub NoPaging_Click(sender As Object, e As System.EventArgs) Handles NoPaging.Click
+
+        Dim limitePagine = GetlimiteNumeroPagineRicerca()
+        If (Me.FascicoliGridView.PageCount > limitePagine) Then
+            ParsecUtility.Utility.MessageBox("Il numero di record risultante dalla ricerca è eccessivo: si prega di raffinare la ricerca!", False)
+            Exit Sub
+        End If
+
+        Me.FascicoliGridView.AllowPaging = Not Me.FascicoliGridView.AllowPaging
+        If Me.FascicoliGridView.AllowPaging Then
+            Me.NoPaging.Text = "Non Paginare"
+            Me.NoPaging.Icon.PrimaryIconUrl = "~/images/Next.png"
+        Else
+            Me.NoPaging.Text = "Paginare"
+            Me.NoPaging.Icon.PrimaryIconUrl = "~/images/Previous.png"
+        End If
+        Me.FascicoliGridView.Rebind()
+    End Sub
+
+    Private Sub updateFascicoloDocumento(ByVal id As Integer, ByVal idDocumentoWS As Integer?)
+        Dim fascicoloDocumentoRep As New ParsecAdmin.FascicoloDocumentoRepository
+        Dim fascicoloDocumento = fascicoloDocumentoRep.GetById(id)
+        fascicoloDocumento.IdDocumentoWS = idDocumentoWS
+        fascicoloDocumentoRep.SaveChanges()
+        fascicoloDocumentoRep.Dispose()
+    End Sub
+
+    Private Sub CancellaDocumentoWS(ByVal idDocumentoWS As Integer, ByVal cliente As ParsecAdmin.Cliente)
+        If (idDocumentoWS > 0) Then
+            Dim wsConservazione As New wsConservazione.wsConservazione
+
+            Dim soapGetDocumentoRequest As New wsConservazione.SoapGetDocumentoRequest
+            soapGetDocumentoRequest.codiceLicenza = cliente.CodLicenza
+            Dim wsFiltroDocumento As New wsConservazione.DocumentoBaseConservazioneFiltro
+            wsFiltroDocumento.idDocumento = idDocumentoWS
+            soapGetDocumentoRequest.documentoFiltro = wsFiltroDocumento
+
+            Dim soapDocumentoBaseResponse = wsConservazione.getDocumento(soapGetDocumentoRequest)
+            If (soapDocumentoBaseResponse.messaggioErrore = "") Then
+                If (soapDocumentoBaseResponse.ListaDocumentiBase(0).idPacchettoVersamento.HasValue) Then
+                    Throw New Exception("Documento già impacchettato: impossibile cancellarlo: " & soapDocumentoBaseResponse.messaggioErrore)
+                Else
+                    Dim soapCancellaDocumentoRequest = New wsConservazione.SoapCancellaDocumentoRequest
+                    soapCancellaDocumentoRequest.codiceLicenza = cliente.CodLicenza
+                    soapCancellaDocumentoRequest.documentoFiltro = wsFiltroDocumento
+                    Dim soapCancellazioneDocumentoResponse = wsConservazione.cancellaDocumento(soapCancellaDocumentoRequest)
+                    If (soapCancellazioneDocumentoResponse.messaggioErrore <> "") Then
+                        Throw New Exception(soapDocumentoBaseResponse.messaggioErrore)
+                    End If
+                End If
+            Else
+                Throw New Exception(soapDocumentoBaseResponse.messaggioErrore)
+            End If
+        Else
+            'Throw New Exception("Documento già Conservato: impossibile cancellarlo!")
+        End If
+
+    End Sub
+
+    Private Function isAlive() As Boolean
+        Try
+            Dim wsConservazione As New wsConservazione.wsConservazione
+            Return wsConservazione.isAlive
+        Catch ex As Exception
+            Return False
+        End Try
+    End Function
+
+    Private Function getDescrizioneUtente(ByVal idUtenteRappresentante As Integer) As String
+        Try
+            If (idUtenteRappresentante > 0) Then
+                Dim utenti As New ParsecContratti.ViewUtentiRepository()
+                Dim utente = utenti.GetQuery.Where(Function(W) W.uteId = idUtenteRappresentante).FirstOrDefault
+                Return utente.uteCognome & " " & utente.uteNome & " [" & utente.uteCodiceFiscale & "]"
+                utenti.Dispose()
+            Else
+                Return ""
+            End If
+        Catch ex As Exception
+            Return ""
+        End Try
+    End Function
+
+    Private Function SbloccaDocumentoSingolo(ByVal tipoDocumento As String, ByVal IdDocumento As Integer) As MessaggioOperazione
+        Dim fascicoloDocumentoRepository As New ParsecAdmin.FascicoloDocumentoRepository
+        Dim documento = fascicoloDocumentoRepository.GetById(IdDocumento)
+
+        Try
+            Dim wsConservazione As New wsConservazione.wsConservazione
+            Dim soapCancellaDocumentoRequest = New wsConservazione.SoapCancellaDocumentoRequest
+            soapCancellaDocumentoRequest.codiceLicenza = AmministrazioneTitolare.CodLicenza
+            soapCancellaDocumentoRequest.documentoFiltro = New wsConservazione.DocumentoBaseConservazioneFiltro
+            soapCancellaDocumentoRequest.documentoFiltro.idDocumento = documento.IdDocumentoWS
+            Dim soapCancellazioneDocumentoResponse = wsConservazione.cancellaDocumento(soapCancellaDocumentoRequest)
+        Catch ex As Exception
+            'NIENTE
+        End Try
+
+        'serve a tolgiere l'aggancio con i relativi moduli
+        Select Case tipoDocumento
+            Case 1 'Documento generico
+                'NIENTE: DEVE RESETTARE SOLO IDODCUMENTOWS (STA PIù AVANTI NEL CODICE)
+            Case ParsecAdmin.TipoModulo.PRO
+                sbloccaProtocollo(documento.IdDocumentoWS)
+            Case ParsecAdmin.TipoModulo.ATT
+                sbloccaAtto(documento.IdDocumentoWS)
+            Case ParsecAdmin.TipoModulo.IOL
+                'TO DO
+                ParsecUtility.Utility.MessageBox("Funzionalità non ancora implementata!", False)
+            Case ParsecAdmin.TipoModulo.CNT
+                sbloccaContratto(documento.IdDocumentoWS)
+
+        End Select
+
+        'LA SBLOCCO ANCHE IN CASO DI ERRORE DAL DOCUMENTOFASCICOLO
+        documento.IdDocumentoWS = Nothing
+        fascicoloDocumentoRepository.SaveChanges()
+        fascicoloDocumentoRepository.Dispose()
+        Dim messaggioOperazione As New MessaggioOperazione
+        messaggioOperazione.errore = False
+        messaggioOperazione.messaggio = "Sblocco Documento avvenuto con successo!"
+        Return messaggioOperazione
+
+    End Function
+
+
+#End Region
+
+#Region "METODI CONSERVAZIONE GENERICI"
+
+    Protected Function ConservaDocumentoGenerico(ByVal fascicolo As FascicoloConservazione, ByVal documento As FascicoloDocumento) As MessaggioOperazione
+
+        If Not isAlive() Then
+            Dim messaggioErroreInvio As New MessaggioOperazione
+            messaggioErroreInvio.messaggio = "Connessione col Modulo Archivio non trovata."
+            messaggioErroreInvio.errore = True
+            Return messaggioErroreInvio
+        Else
+            Dim sb As New StringBuilder
+            Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+
+            Dim pathDownload As String = String.Empty
+
+            If documento.Id < 0 Then
+                'caso impossibile
+                'ParsecUtility.Utility.MessageBox("Il documento selezionato non esiste!", False)
+                sb.AppendLine("Il documento selezionato " & documento.Id & " non esiste!")
+            Else
+                pathDownload = System.Configuration.ConfigurationManager.AppSettings("PathDocumenti") & documento.path & documento.NomeDocumento
+            End If
+            Dim file As New IO.FileInfo(pathDownload)
+
+            If Me.EnteConservatoreAttivo Is Nothing Then
+                ' ParsecUtility.Utility.MessageBox("Nessun Ente Conservatore Attivo risulta configurato: impossibile proseguire!", False)
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = "Nessun Ente Conservatore Attivo risulta configurato: impossibile proseguire!"
+                messaggioErroreInvio.errore = True
+                Return messaggioErroreInvio
+            End If
+
+            If file.Exists Then
+
+                'conservo il documento
+                Dim metaDatoEsterno As New wsConservazione.MetaDatoEsterno
+
+                metaDatoEsterno.FileName = documento.NomeDocumento
+                Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+                Dim soggettoProduttore = utenteCollegato.Cognome & ", " & utenteCollegato.Nome & If(Not String.IsNullOrEmpty(utenteCollegato.CodiceFiscale), ", " & utenteCollegato.CodiceFiscale, "")
+
+                metaDatoEsterno.Oggetto = documento.NomeDocumentoOriginale
+                metaDatoEsterno.idDocumentoSep = Nothing
+                metaDatoEsterno.idModuloSep = Nothing
+                metaDatoEsterno.TipoDocumento = "DOCUMENTO_GENERICO"
+                metaDatoEsterno.DataChiusura = Now
+                metaDatoEsterno.SoggettoProduttoreDocumento = soggettoProduttore
+                metaDatoEsterno.DestinatarioDocumento = "INTERNO"
+                metaDatoEsterno.Informazioni = "Codice = " & fascicolo.CodiceFascicoloSistema & fascicolo.CodiceFascicoloUtente & "; Data Apertura = " & fascicolo.dataApertura.ToShortDateString & "; Data Chiusura = " & fascicolo.dataChiusura.ToShortDateString
+
+                metaDatoEsterno.IdFascicolo = fascicolo.IdFascicolo
+                metaDatoEsterno.ResponsabileProcedimentoFascicolo = fascicolo.responsabile
+                metaDatoEsterno.AmministrazioneTitolareFascicolo = AmministrazioneTitolare.CodiceAmministrazione
+                metaDatoEsterno.OggettoFascicolo = fascicolo.oggetto
+                metaDatoEsterno.AmministrazioniPartecipantiFascicolo = fascicolo.amministrazioniPartecipanti
+                metaDatoEsterno.IdDocumentoConservatoPadre = Nothing
+                'metaDatoGenerico.NumeroDocumento = metaDatoGenerico.NumeroProtocollo
+                'metaDatoGenerico.DataDocumento = metaDatoGenerico.DataProtocollo
+                metaDatoEsterno.TipologiaDocumentoEsterno = "ESTERNO"
+
+                Dim fileByte = IO.File.ReadAllBytes(pathDownload)
+                Select Case EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+                    Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                        'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                        'metaDatoEsterno.AlgoritmoImpronta = "SHA-1"
+                        metaDatoEsterno.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByte)
+                        'metaDatoEsterno.Impronta = BitConverter.ToString(metaDatoEsterno.ImprontaFile).Replace("-", "")
+                        'Case ("aruba")
+                        'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                    Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA256
+                        'metaDatoEsterno.AlgoritmoImpronta = "SHA-256"
+                        metaDatoEsterno.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByte)
+                        'metaDatoEsterno.Impronta = BitConverter.ToString(metaDatoEsterno.ImprontaFile).Replace("-", "")
+                    Case Else
+                        Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+                End Select
+                metaDatoEsterno.AlgoritmoImpronta = EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+
+                Dim metaDatoGenericoSoap As New wsConservazione.SoapConservaGenericoRequest
+                metaDatoGenericoSoap.codiceLicenza = Me.AmministrazioneTitolare.CodLicenza
+                metaDatoGenericoSoap.metaDatoEsterno = metaDatoEsterno
+                'metaDatoGenericoSoap.file = IO.File.ReadAllBytes(pathDownload)
+                metaDatoGenericoSoap.file = Nothing
+                metaDatoGenericoSoap.sourcePath = pathDownload
+
+                Dim documentoConservato = wsConservazioneSoap.conservaDocumentoGenerico(metaDatoGenericoSoap)
+                If (documentoConservato.messaggioErrore <> "") Then
+                    sb.AppendLine("Il file Generico  " & documento.NomeDocumento & "non è stato inviato per il seguente motivo:" & vbCrLf & documentoConservato.messaggioErrore)
+                Else
+                    Me.updateFascicoloDocumento(documento.Id, documentoConservato.ListaDocumentiBase(0).idDocumento)
+                End If
+
+            Else
+                ParsecUtility.Utility.MessageBox("Il File associato al documento " & documento.Id & " non esiste!", False)
+            End If
+
+            If sb.Length = 0 Then
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = "Invio al Modulo Archivio concluso con successo!"
+                messaggioErroreInvio.errore = False
+                Return messaggioErroreInvio
+                Return Nothing
+            Else
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = sb.ToString
+                messaggioErroreInvio.errore = True
+                Return messaggioErroreInvio
+            End If
+
+        End If
+
+    End Function
+
+#End Region
+
+#Region "METODI CONSERVAZIONE PROPOSTE"
+
+    Protected Function ConservaPropostaAmministrativa(ByVal fascicolo As FascicoloConservazione, ByVal documento As FascicoloDocumento) As MessaggioOperazione
+
+        If Not isAlive() Then
+            Dim messaggioErroreInvio As New MessaggioOperazione
+            messaggioErroreInvio.messaggio = "Connessione col Modulo Archivio non trovata."
+            messaggioErroreInvio.errore = True
+            Return messaggioErroreInvio
+        Else
+
+            If Me.EnteConservatoreAttivo Is Nothing Then
+                ' ParsecUtility.Utility.MessageBox("Nessun Ente Conservatore Attivo risulta configurato: impossibile proseguire!", False)
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = "Nessun Ente Conservatore Attivo risulta configurato: impossibile proseguire!"
+                messaggioErroreInvio.errore = True
+                Return messaggioErroreInvio
+            End If
+
+            Dim attoDecisonaleRepository As New ParsecAtt.DocumentoRepository
+
+            Dim sb As New StringBuilder
+            Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+
+            Dim cliente As ParsecAdmin.Cliente = ParsecUtility.Applicazione.ClienteCorrente
+
+            Dim idDocumento As Integer = 0
+            Dim msg As String = String.Empty
+
+            Dim nomefileFirmato As String = String.Empty
+
+            idDocumento = documento.IdDocumento
+            Dim documentoAtto = attoDecisonaleRepository.GetById(idDocumento)
+            Dim firme = attoDecisonaleRepository.GetFirme(documentoAtto.Id)
+            documentoAtto.Firme = firme
+            Dim nFirmato = GetNomeFileFirmato(documentoAtto)
+            If String.IsNullOrEmpty(nFirmato) Then
+                Dim annoEsercizio = GetAnnoEsercizio(documentoAtto)
+                nFirmato = String.Format("{0}{1}\{2}", ParsecAdmin.WebConfigSettings.GetKey("PathAtti"), annoEsercizio, documentoAtto.Nomefile)
+            End If
+
+            nomefileFirmato = nFirmato
+
+            Try
+                Me.ConservaSingoloPropostaAmministrativa(fascicolo, documento, nomefileFirmato, AmministrazioneTitolare.CodLicenza)
+            Catch ex As Exception
+                msg = "L'Atto Amministrativo con Id. " & idDocumento.ToString & " non è stato inviato per il seguente motivo:" & vbCrLf
+                sb.AppendLine(msg & ex.Message)
+            End Try
+
+
+            If sb.Length = 0 Then
+                'Me.infoOperazioneHidden.Value = "Invio al Modulo Archivio concluso con successo!"
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = "Invio al Modulo Archivio concluso con successo!"
+                messaggioErroreInvio.errore = False
+                Return messaggioErroreInvio
+            Else
+                ' ParsecUtility.Utility.MessageBox(sb.ToString, False)
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = sb.ToString
+                messaggioErroreInvio.errore = True
+                Return messaggioErroreInvio
+            End If
+
+            'Me.AggiornaGriglia()
+        End If
+
+    End Function
+
+    Private Sub ConservaSingoloPropostaAmministrativa(ByVal fascicolo As FascicoloConservazione, ByVal documentoFasciolo As FascicoloDocumento, ByVal nomeFileFirmato As String, ByVal codiceLicenza As String)
+
+        Dim listaAttiConservati As New List(Of Integer)
+        Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+
+        Try
+            'OTTENGO L'OGGETTO COMPLETO
+            Dim documenti As New ParsecAtt.DocumentoRepository
+            Dim documento = documenti.GetFullById(documentoFasciolo.IdDocumento)
+            Dim documentiFascicoloRep As New ParsecAdmin.FascicoloDocumentoRepository
+
+            If documento Is Nothing Then
+                Throw New ApplicationException("Proposta amministrativa non trovata!")
+            End If
+
+            Dim idDocumentoConservatoPadre As Integer = 0
+
+            Try
+
+                '**************************************************************************************************************
+                'CERCO IL DOCUMENTO DA CONSERVARE
+                '**************************************************************************************************************
+                Dim nomeFilePrimarioDaConservare As String = nomeFileFirmato
+
+                If Not IO.File.Exists(nomeFilePrimarioDaConservare) Then
+                    Throw New Exception("File '" & nomeFilePrimarioDaConservare.Replace("\", "/") & "' non trovato!")
+                End If
+                '**************************************************************************************************************
+
+                Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+                Dim soggettoProduttore = utenteCollegato.Cognome & ", " & utenteCollegato.Nome & If(Not String.IsNullOrEmpty(utenteCollegato.CodiceFiscale), ", " & utenteCollegato.CodiceFiscale, "")
+
+
+                '**************************************************************************************************************
+                '1) CONSERVO IL DOCUMENTO FIRMATO O IL PDF ASSOCIATO ALL'ATTO AMMINISTRATIVO
+                '**************************************************************************************************************
+                Dim metaDatoEsterno As New wsConservazione.MetaDatoEsterno
+
+                metaDatoEsterno.FileName = IO.Path.GetFileName(nomeFilePrimarioDaConservare)
+
+                metaDatoEsterno.Oggetto = documento.Oggetto
+                metaDatoEsterno.idDocumentoSep = documento.Id
+                metaDatoEsterno.idModuloSep = ParsecAdmin.TipoModulo.ATT
+                metaDatoEsterno.TipoDocumento = "DOCUMENTO_GENERICO"
+                metaDatoEsterno.DataChiusura = Now
+                metaDatoEsterno.SoggettoProduttoreDocumento = soggettoProduttore
+                metaDatoEsterno.DestinatarioDocumento = "Interno"
+                metaDatoEsterno.Informazioni = "Codice = " & fascicolo.CodiceFascicoloSistema & fascicolo.CodiceFascicoloUtente & "; Data Apertura = " & fascicolo.dataApertura.ToShortDateString & "; Data Chiusura = " & fascicolo.dataChiusura.ToShortDateString
+                'If (documento.Note = "") Then
+                '    metaDatoEsterno.Informazioni = "Numero Registro = " & fascicolo.numeroRegistro & "; Data Apertura = " & fascicolo.dataApertura.ToShortDateString & "; Data Chiusura = " & fascicolo.dataChiusura.ToShortDateString
+                'Else
+                '    metaDatoEsterno.Informazioni = documento.Note '"Numero Registro = " & fascicolo.numeroRegistro & "; Data Apertura = " & fascicolo.dataApertura.ToShortDateString & "; Data Chiusura = " & fascicolo.dataChiusura.ToShortDateString
+                'End If
+
+
+                metaDatoEsterno.IdFascicolo = fascicolo.IdFascicolo
+                metaDatoEsterno.ResponsabileProcedimentoFascicolo = fascicolo.responsabile
+                metaDatoEsterno.AmministrazioneTitolareFascicolo = AmministrazioneTitolare.CodiceAmministrazione
+                metaDatoEsterno.OggettoFascicolo = fascicolo.oggetto
+                metaDatoEsterno.AmministrazioniPartecipantiFascicolo = fascicolo.amministrazioniPartecipanti
+                metaDatoEsterno.IdDocumentoConservatoPadre = Nothing
+                metaDatoEsterno.NumeroDocumento = documento.ContatoreGenerale
+                metaDatoEsterno.DataDocumento = documento.DataProposta
+                metaDatoEsterno.TipoDocumento = "DOCUMENTO_GENERICO"
+                metaDatoEsterno.TipologiaDocumentoEsterno = documento.DescrizioneTipologia
+
+                Dim fileByte = IO.File.ReadAllBytes(nomeFilePrimarioDaConservare)
+                Select Case EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+                    Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                        'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                        'metaDatoEsterno.AlgoritmoImpronta = "SHA-1"
+                        metaDatoEsterno.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByte)
+                        ' metaDatoEsterno.Impronta = BitConverter.ToString(metaDatoEsterno.ImprontaFile).Replace("-", "")
+                        'Case ("aruba")
+                        'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                    Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                        'metaDatoEsterno.AlgoritmoImpronta = "SHA-256"
+                        metaDatoEsterno.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByte)
+                        'metaDatoEsterno.Impronta = BitConverter.ToString(metaDatoEsterno.ImprontaFile).Replace("-", "")
+                    Case Else
+                        Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+                End Select
+                metaDatoEsterno.AlgoritmoImpronta = EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+
+                Dim metaDatoGenericoSoap As New wsConservazione.SoapConservaGenericoRequest
+                metaDatoGenericoSoap.codiceLicenza = Me.AmministrazioneTitolare.CodLicenza
+                metaDatoGenericoSoap.metaDatoEsterno = metaDatoEsterno
+                metaDatoGenericoSoap.file = Nothing 'IO.File.ReadAllBytes(nomeFilePrimarioDaConservare)
+                metaDatoGenericoSoap.sourcePath = nomeFilePrimarioDaConservare
+
+                Dim documentoConservato = wsConservazioneSoap.conservaDocumentoGenerico(metaDatoGenericoSoap)
+
+                If String.IsNullOrEmpty(documentoConservato.messaggioErrore) Then
+                    idDocumentoConservatoPadre = documentoConservato.ListaDocumentiBase(0).idDocumento
+                    listaAttiConservati.Add(idDocumentoConservatoPadre)
+                    Dim documentoFascicoloToSave = documentiFascicoloRep.GetById(documentoFasciolo.Id)
+                    documentoFascicoloToSave.IdDocumentoWS = idDocumentoConservatoPadre
+                Else
+                    Throw New Exception(documentoConservato.messaggioErrore)
+                End If
+            Catch ex As Exception
+                Throw New Exception(ex.Message)
+
+            End Try
+
+            '**************************************************************************************************************
+
+            '**************************************************************************************************************
+            '2) CONSERVO GLI ALLEGATI ASSOCIATI ALL'ATTO AMMINISTRATIVO
+            '**************************************************************************************************************
+            Dim messaggioErrore As String = String.Empty
+
+            messaggioErrore = Me.ConservaAllegatiPropostaAmministrativa(fascicolo, documento, idDocumentoConservatoPadre, codiceLicenza, listaAttiConservati)
+            If Not String.IsNullOrEmpty(messaggioErrore) Then
+
+                '**************************************************************************************************************
+                'ANNULLO I SALVATAGGI IN CASO DI ERRORE E SOLLEVO L'ECCEZIONE
+                '**************************************************************************************************************
+                Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+                Throw New Exception(messaggioErrore)
+            End If
+            '****************************************************************************************************************************
+
+
+
+            '****************************************************************************************************************************
+            '3) CONSERVO I FILE P7M ASSOCIATI ALLE FIRME DELLA PROPOSTA DI DELIBERA O DELLA PROPOSTA DI DETERMINA
+            '****************************************************************************************************************************
+
+            'L'ATTO DA CONSERVARE E' UNA PROPOSTA, QUINDI QUESTA CONDIZIONE NON SI VERIFICHERA' MAI
+            If documento.TipologiaDocumento = ParsecAtt.TipoDocumento.Delibera Then
+                If documento.IdPadre.HasValue Then
+                    Dim proposta = documenti.GetFullById(documento.IdPadre.Value)
+                    messaggioErrore = Me.ConservaDocumentiFirmatiProposta(fascicolo, proposta, idDocumentoConservatoPadre, codiceLicenza, listaAttiConservati)
+                    If Not String.IsNullOrEmpty(messaggioErrore) Then
+                        '**************************************************************************************************************
+                        'ANNULLO I SALVATAGGI IN CASO DI ERRORE E SOLLEVO L'ECCEZIONE
+                        '**************************************************************************************************************
+                        Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+                        Throw New Exception(messaggioErrore)
+                    End If
+                End If
+            End If
+
+            'L'ATTO DA CONSERVARE E' UNA PROPOSTA, QUINDI QUESTA CONDIZIONE NON SI VERIFICHERA' MAI
+            If documento.TipologiaDocumento = ParsecAtt.TipoDocumento.Determina Then
+                If documento.IdPadre.HasValue Then
+
+                    Dim parametri As New ParsecAdmin.ParametriRepository
+                    Dim parametro = parametri.GetByName("ConservaDocumentiFirmatiPropostaDetermina")
+                    parametri.Dispose()
+
+                    Dim conservaDocumentiFirmatiPropostaDetermina As Boolean = False
+                    If Not parametro Is Nothing Then
+                        conservaDocumentiFirmatiPropostaDetermina = (parametro.Valore = "1")
+                    End If
+
+                    If conservaDocumentiFirmatiPropostaDetermina Then
+                        Dim proposta = documenti.GetFullById(documento.IdPadre.Value)
+                        If Not proposta Is Nothing Then
+                            messaggioErrore = ConservaDocumentiFirmatiProposta(fascicolo, proposta, idDocumentoConservatoPadre, codiceLicenza, listaAttiConservati)
+
+                            If Not String.IsNullOrEmpty(messaggioErrore) Then
+                                '**************************************************************************************************************
+                                'ANNULLO I SALVATAGGI IN CASO DI ERRORE E SOLLEVO L'ECCEZIONE
+                                '**************************************************************************************************************
+                                Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+                                Throw New Exception(messaggioErrore)
+                            End If
+                        End If
+                    End If
+
+                End If
+            End If
+
+
+
+            '****************************************************************************************************************************
+
+            '****************************************************************************************************************************
+            '4) CONSERVO IL FILE P7M DELLA RELATA DI PUBBLICAZIONE
+            '****************************************************************************************************************************
+            messaggioErrore = ConservaRelataPubblicazioneFirmata(fascicolo, documento, idDocumentoConservatoPadre, codiceLicenza, listaAttiConservati)
+            If Not String.IsNullOrEmpty(messaggioErrore) Then
+                '**************************************************************************************************************
+                'ANNULLO I SALVATAGGI IN CASO DI ERRORE E SOLLEVO L'ECCEZIONE
+                '**************************************************************************************************************
+                Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+                Throw New Exception(messaggioErrore)
+            End If
+            '****************************************************************************************************************************
+
+            'eseguo update sull'Atto
+
+           Dim doc As ParsecAtt.Documento = documenti.Where(Function(c) c.Id = documentoFasciolo.IdDocumento).FirstOrDefault
+            If Not doc Is Nothing And doc.IdDocumentoWS Is Nothing Then
+                doc.IdDocumentoWS = idDocumentoConservatoPadre
+                doc.InviatoDaFascicolo = True
+                documenti.SaveChanges()
+            End If
+
+            documentiFascicoloRep.SaveChanges()
+            documentiFascicoloRep.Dispose()
+            documenti.Dispose()
+
+        Catch ex As Exception
+            Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+            Throw New Exception(ex.Message)
+        End Try
+
+
+    End Sub
+
+    Private Function ConservaAllegatiPropostaAmministrativa(ByVal fascicolo As FascicoloConservazione, ByVal documento As ParsecAtt.Documento, ByVal idDocumentoConservatoPadre As Integer, ByVal codiceLicenza As String, ByRef documentiConservati As List(Of Integer)) As String
+
+        Dim percorsoRoot As String = ParsecAdmin.WebConfigSettings.GetKey("PathDocumenti")
+        percorsoRoot = percorsoRoot.Remove(percorsoRoot.Length - 1, 1)
+        Dim messaggioErrore As String = String.Empty
+        Dim pathDownload As String = String.Empty
+        Dim nomefile As String = String.Empty
+        Dim request As wsConservazione.SoapConservaGenericoRequest = Nothing
+        Dim metaDatoEsterno As wsConservazione.MetaDatoEsterno = Nothing
+        Dim documentoConservato As wsConservazione.SoapDocumentoBaseResponse = Nothing
+        Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+
+        'CONSERVO GLI ALLEGATI ASSOCIATI ALL'ATTO AMMINISTRATIVO
+        Try
+            For Each allegato In documento.Allegati
+                Try
+
+                    If Not String.IsNullOrEmpty(allegato.NomeFileFirmato) Then
+                        nomefile = allegato.NomeFileFirmato
+                    Else
+                        nomefile = allegato.Nomefile
+                    End If
+
+                    pathDownload = percorsoRoot & allegato.PercorsoRelativo & nomefile
+                    If Not IO.File.Exists(pathDownload) Then
+                        messaggioErrore = "File '" & pathDownload.Replace("\", "/") & "' non trovato!"
+                        Exit For
+                    End If
+
+                    request = New wsConservazione.SoapConservaGenericoRequest
+                    request.codiceLicenza = codiceLicenza
+                    'request.file = IO.File.ReadAllBytes(pathDownload)
+
+                    metaDatoEsterno = New wsConservazione.MetaDatoEsterno
+                    metaDatoEsterno.DataChiusura = Now
+
+                    metaDatoEsterno.FileName = nomefile
+
+                    metaDatoEsterno.IdDocumentoConservatoPadre = idDocumentoConservatoPadre
+                    metaDatoEsterno.TipoDocumento = "DOCUMENTO_GENERICO"
+                    metaDatoEsterno.idDocumentoSep = allegato.Id
+                    metaDatoEsterno.idModuloSep = ParsecAdmin.TipoModulo.ATT
+                    'metaDatoEsterno.Informazioni = allegato.Oggetto
+                    metaDatoEsterno.Informazioni = "Codice = " & fascicolo.CodiceFascicoloSistema & fascicolo.CodiceFascicoloUtente & "; Data Apertura = " & fascicolo.dataApertura.ToShortDateString & "; Data Chiusura = " & fascicolo.dataChiusura.ToShortDateString
+                    metaDatoEsterno.Oggetto = allegato.Oggetto
+
+                    Dim fileByte = IO.File.ReadAllBytes(pathDownload)
+                    Select Case EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+                        Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                            'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                            'metaDatoEsterno.AlgoritmoImpronta = "SHA-1"
+                            metaDatoEsterno.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByte)
+                            'metaDatoEsterno.Impronta = BitConverter.ToString(metaDatoEsterno.ImprontaFile).Replace("-", "")
+                            'Case ("aruba")
+                            'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                        Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA256
+                            'metaDatoEsterno.AlgoritmoImpronta = "SHA-256"
+                            metaDatoEsterno.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByte)
+                            'metaDatoEsterno.Impronta = BitConverter.ToString(metaDatoEsterno.ImprontaFile).Replace("-", "")
+                        Case Else
+                            Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+                    End Select
+                    metaDatoEsterno.AlgoritmoImpronta = EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+
+                    request.metaDatoEsterno = metaDatoEsterno
+                    request.file = Nothing 'IO.File.ReadAllBytes(pathDownload)
+                    request.sourcePath = pathDownload
+
+                    documentoConservato = wsConservazioneSoap.conservaDocumentoGenerico(request)
+
+                    If String.IsNullOrEmpty(documentoConservato.messaggioErrore) Then
+                        documentiConservati.Add(documentoConservato.ListaDocumentiBase(0).idDocumento)
+                    Else
+                        messaggioErrore = documentoConservato.messaggioErrore
+                        Exit For
+                    End If
+                Catch ex As Exception
+                    messaggioErrore = ex.Message
+                    Exit For
+                End Try
+            Next
+        Catch ex As Exception
+            messaggioErrore = ex.Message
+        End Try
+
+        Return messaggioErrore
+    End Function
+
+#End Region
+
+#Region "METODI CONSERVAZIONE CONTRATTI"
+
+    Protected Function ConservaContratto(ByVal fascicolo As FascicoloConservazione, ByVal documento As FascicoloDocumento) As MessaggioOperazione
+
+        If Not isAlive() Then
+
+            Dim messaggioErroreInvio As New MessaggioOperazione
+            messaggioErroreInvio.messaggio = "Connessione col Modulo Archivio non trovata."
+            messaggioErroreInvio.errore = True
+            Return messaggioErroreInvio
+        Else
+
+            If Me.EnteConservatoreAttivo Is Nothing Then
+                ' ParsecUtility.Utility.MessageBox("Nessun Ente Conservatore Attivo risulta configurato: impossibile proseguire!", False)
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = "Nessun Ente Conservatore Attivo risulta configurato: impossibile proseguire!"
+                messaggioErroreInvio.errore = True
+                Return messaggioErroreInvio
+            End If
+
+            Dim sb As New StringBuilder
+
+            Dim documentoPrimarioConservato As New wsConservazione.SoapDocumentoBaseResponse
+            Using transaction As New TransactionScope()
+
+                Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+
+                Dim contrattoRepository As New ParsecContratti.ContrattoRepository
+                Dim contrattoDaConservare = contrattoRepository.GetById(documento.IdDocumento)
+
+                Dim success As Boolean = False
+
+                Dim listaDocumentiDaConservare As New List(Of wsConservazione.DocumentoBaseConservazione)
+
+                Try
+                    If (Not contrattoDaConservare Is Nothing) Then
+
+                        Dim wsDocumentiTemporaneiSoap As New wsConservazione.wsConservazione
+                        Dim soapGetListaTipiDocumentiRequest As New wsConservazione.SoapGetListaTipiDocumentoRequest
+                        soapGetListaTipiDocumentiRequest.codiceLicenza = Me.AmministrazioneTitolare.CodLicenza
+                        soapGetListaTipiDocumentiRequest.idUtente = utenteCollegato.Id
+                        Dim wsDocumentiGestitiResponse = wsDocumentiTemporaneiSoap.getTipiDocumentoGestiti(soapGetListaTipiDocumentiRequest)
+                        If (wsDocumentiGestitiResponse.messaggioErrore <> "") Then
+                            Throw New Exception(wsDocumentiGestitiResponse.messaggioErrore)
+                        End If
+                        Dim moduloSepSoap = wsDocumentiGestitiResponse.ListaDocumentiGestiti.Where(Function(w) w.Descrizione = "CONTRATTO").ToList
+                        If (Not moduloSepSoap Is Nothing And moduloSepSoap.Count = 1) Then
+
+                            Dim contratti As New ParsecContratti.ContrattoRepository() '.GetQuery.Where(Function(w) w.idContratto = contrattoDaConservare.idContratto)
+                            Dim documentoBaseACM As New ParsecContratti.ViewDocumentiACMRepository(contratti.Context)
+                            Dim soggettoFisico As New ParsecContratti.SoggettiFisiciRepository(contratti.Context)
+
+                            Dim res = From contr In contratti.GetQuery.Where(Function(w) w.idContratto = contrattoDaConservare.idContratto)
+                                        Join docbaseACM In documentoBaseACM.GetQuery On docbaseACM.idDocumento Equals contr.fk_doc_contratto
+                                        Group Join soggettoUfficialeRogante In soggettoFisico.GetQuery On soggettoUfficialeRogante.Id Equals contr.idSoggettoUfficialeRogante Into elenco_1 = Group
+                                        From ufficialeRogante In elenco_1.DefaultIfEmpty()
+                                        Group Join rappresentante In soggettoFisico.GetQuery On rappresentante.Id Equals contr.idSoggettoLegaleRappresentante Into elenco = Group _
+                                        From soggettoRappresentante In elenco.DefaultIfEmpty()
+                                        Select New With {contr, docbaseACM, ufficialeRogante, soggettoRappresentante}
+
+                            Dim allegatiContratti As New ParsecContratti.DocumentoContrattoRepository()
+
+                            Dim contraentiContratto As New ParsecContratti.ContraenteContrattoRepository()
+                            Dim tipologiaContratto As New ParsecContratti.TipoContrattoRepository()
+
+                            Dim viewDocumentiContratti = From v In res.AsEnumerable
+                            Select New wsConservazione.DocumentoBaseConservazione With
+                            {
+                            .idDocumentoSep = v.docbaseACM.idDocumento,
+                            .idModuloSep = ParsecAdmin.TipoModulo.CNT,
+                            .nomeFileOriginale = v.docbaseACM.FileNameFirmato,
+                            .path = v.docbaseACM.path,
+                            .classeDocumentale = moduloSepSoap(0).Descrizione,
+                            .dataDocumento = v.contr.datarepertoriazione,
+                            .UfficialeRoganteContratto = If(v.ufficialeRogante Is Nothing, "", getDescrizioneUtente(v.ufficialeRogante.IdUtente)),
+                            .legaleRappresentanteContratto = If(v.soggettoRappresentante Is Nothing, "", getDescrizioneUtente(v.soggettoRappresentante.IdUtente)),
+                            .contraentiContratto = contraentiContratto.getListaContraentiAsString(v.contr),
+                            .idDocumentoPadre = Nothing,
+                            .tipologiaContratto = tipologiaContratto.GetById(v.contr.fk_tipoContratto).descrizione,
+                            .numeroDocumento = v.contr.numerorepertoriazione,
+                            .oggetto = v.contr.oggetto,
+                            .dataChiusura = Now,
+                            .SoggettoProduttoreDocumento = utenteCollegato.Cognome & ", " & utenteCollegato.Nome & " [" & utenteCollegato.CodiceFiscale & "]",
+                            .informazioni = "Codice = " & fascicolo.CodiceFascicoloSistema & fascicolo.CodiceFascicoloUtente & "; Data Apertura = " & fascicolo.dataApertura.ToShortDateString & "; Data Chiusura = " & fascicolo.dataChiusura.ToShortDateString,
+                            .listaAllegati = allegatiContratti.getDocumentiContratto(v.contr.idContratto).Where(Function(w) Not w.Impronta Is Nothing And Not w.Filename Is Nothing).Select(Function(s) New wsConservazione.DocumentoBaseConservazione With {
+                                                    .idDocumentoSep = s.fk_documento,
+                                                    .idModuloSep = ParsecAdmin.TipoModulo.CNT,
+                                                    .nomeFileOriginale = If(s.FileNameFirmato Is Nothing, s.Filename, s.FileNameFirmato),
+                                                    .path = s.Path,
+                                                    .informazioni = "Allegato del Contratto n. " & v.contr.numerorepertoriazione & " del " & v.contr.datarepertoriazione.Value.Year,
+                                                    .idDocumentoPadre = Nothing
+                                                    }).ToArray
+                                }
+
+
+                            If (viewDocumentiContratti.ToList.Count > 0) Then
+                                'Try
+                                For Each item In viewDocumentiContratti
+                                    Dim pathDownload = ParsecAdmin.WebConfigSettings.GetKey("PathDocumentoContratti") & item.path & "\" & item.nomeFileOriginale
+                                    'Dim ObjFileStream As New FileStream(ParsecAdmin.WebConfigSettings.GetKey("PathDocumentoContratti") & item.path & "\" & item.nomeFileOriginale, FileMode.Open, FileAccess.Read)
+                                    'Dim len As Integer = CInt(ObjFileStream.Length)
+                                    'Dim MyByteArray As [Byte]() = New [Byte](len - 1) {}
+                                    'ObjFileStream.Read(MyByteArray, 0, len)
+                                    'ObjFileStream.Close()
+
+                                    If (Not IO.File.Exists(pathDownload)) Then
+                                        sb.AppendLine("Il File associato al contratto con id =  " & documento.IdDocumento & " non è stato trovato!")
+                                    Else
+                                        Dim wsConservazione As New wsConservazione.wsConservazione
+                                        Dim metadati As New wsConservazione.MetaDatoContratto
+
+                                        Dim fileByte = IO.File.ReadAllBytes(pathDownload)
+                                        Select Case EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+                                            Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                                                'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                                                'metadati.AlgoritmoImpronta = "SHA-1"
+                                                metadati.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByte)
+                                                'metadati.Impronta = BitConverter.ToString(metadati.ImprontaFile).Replace("-", "")
+                                                'Case ("aruba")
+                                                'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                                            Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA256
+                                                'metadati.AlgoritmoImpronta = "SHA-256"
+                                                metadati.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByte)
+                                                'metadati.Impronta = BitConverter.ToString(metadati.ImprontaFile).Replace("-", "")
+                                            Case Else
+                                                Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+                                        End Select
+                                        metadati.AlgoritmoImpronta = EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+
+                                        metadati.DataDocumento = item.dataDocumento
+                                        metadati.FileName = item.nomeFileOriginale
+                                        metadati.IdDocumentoConservatoPadre = Nothing
+                                        metadati.idDocumentoSep = item.idDocumentoSep
+                                        metadati.idModuloSep = ParsecAdmin.TipoModulo.CNT
+                                        metadati.Informazioni = item.informazioni
+                                        metadati.listaContraenti = item.contraentiContratto
+                                        metadati.NumeroDocumento = item.numeroDocumento
+                                        metadati.Oggetto = item.oggetto
+                                        metadati.tipoContratto = item.tipologiaContratto
+                                        metadati.TipoDocumento = item.classeDocumentale
+                                        metadati.ufficialeRogante = item.UfficialeRoganteContratto
+                                        metadati.responsabileProcedimento = item.legaleRappresentanteContratto
+                                        metadati.DataChiusura = item.dataChiusura
+                                        metadati.SoggettoProduttoreDocumento = item.SoggettoProduttoreDocumento
+                                        metadati.DestinatarioDocumento = "Interno"
+                                        metadati.dataRegistrazioneADE = item.DataRegistrazioneADE
+                                        metadati.numeroSerieADE = item.NumeroSerieADE
+                                        metadati.numeroRegistrazioneADE = item.NumeroRegistrazioneADE
+
+                                        metadati.IdFascicolo = fascicolo.IdFascicolo
+                                        metadati.ResponsabileProcedimentoFascicolo = fascicolo.responsabile
+                                        metadati.AmministrazioneTitolareFascicolo = AmministrazioneTitolare.CodiceAmministrazione
+                                        metadati.OggettoFascicolo = fascicolo.oggetto
+                                        metadati.AmministrazioniPartecipantiFascicolo = fascicolo.amministrazioniPartecipanti
+
+                                        Dim soapConservaContrattoRequest As New wsConservazione.SoapConservaContrattoRequest
+                                        soapConservaContrattoRequest.codiceLicenza = Me.AmministrazioneTitolare.CodLicenza
+                                        soapConservaContrattoRequest.metaDatoContratto = metadati
+                                        soapConservaContrattoRequest.file = Nothing 'MyByteArray
+                                        soapConservaContrattoRequest.sourcePath = pathDownload
+                                        soapConservaContrattoRequest.idUtente = utenteCollegato.Id
+                                        documentoPrimarioConservato = wsConservazione.conservaContrattoOrAllegato(soapConservaContrattoRequest)
+                                        If (documentoPrimarioConservato.messaggioErrore = "") Then
+
+                                            listaDocumentiDaConservare.Add(documentoPrimarioConservato.ListaDocumentiBase(0))
+
+                                            If (Not item.listaAllegati Is Nothing) Then
+                                                For Each allegato In item.listaAllegati
+                                                    wsConservazione = New wsConservazione.wsConservazione
+
+                                                    pathDownload = ParsecAdmin.WebConfigSettings.GetKey("PathDocumentoContratti") & allegato.path & "\" & allegato.nomeFileOriginale
+
+                                                    'ObjFileStream = New FileStream(ParsecAdmin.WebConfigSettings.GetKey("PathDocumentoContratti") & allegato.path & "\" & allegato.nomeFileOriginale, FileMode.Open, FileAccess.Read)
+                                                    'Len = CInt(ObjFileStream.Length)
+                                                    'MyByteArray = New [Byte](Len() - 1) {}
+                                                    'ObjFileStream.Read(MyByteArray, 0, Len)
+                                                    If (Not IO.File.Exists(pathDownload)) Then
+                                                        sb.AppendLine("L'allegato con id = " & allegato.idDocumento & " associato al contratto con id =  " & documento.IdDocumento & " non è stato trovato!")
+                                                    Else
+                                                        Dim metadatiAllegato As New wsConservazione.MetaDatoContratto
+                                                        Dim fileByteAllegato = IO.File.ReadAllBytes(pathDownload)
+                                                        Select Case EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+                                                            Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                                                                'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                                                                'metadatiAllegato.AlgoritmoImpronta = "SHA-1"
+                                                                metadatiAllegato.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByteAllegato)
+                                                                'metadatiAllegato.Impronta = BitConverter.ToString(metadatiAllegato.ImprontaFile).Replace("-", "")
+                                                                'Case ("aruba")
+                                                                'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                                                            Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA256
+                                                                'metadatiAllegato.AlgoritmoImpronta = "SHA-256"
+                                                                metadatiAllegato.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByteAllegato)
+                                                                'metadatiAllegato.Impronta = BitConverter.ToString(metadatiAllegato.ImprontaFile).Replace("-", "")
+                                                            Case Else
+                                                                Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+                                                        End Select
+                                                        metadatiAllegato.AlgoritmoImpronta = EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+
+                                                        metadatiAllegato.DataDocumento = metadati.DataDocumento
+                                                        metadatiAllegato.FileName = allegato.nomeFileOriginale
+                                                        metadatiAllegato.idDocumentoSep = allegato.idDocumentoSep
+                                                        metadatiAllegato.IdDocumentoConservatoPadre = documentoPrimarioConservato.ListaDocumentiBase(0).idDocumento
+                                                        metadatiAllegato.idModuloSep = ParsecAdmin.TipoModulo.CNT
+                                                        metadatiAllegato.Informazioni = allegato.informazioni
+                                                        metadatiAllegato.listaContraenti = metadati.listaContraenti
+                                                        metadatiAllegato.ufficialeRogante = metadati.ufficialeRogante
+                                                        metadatiAllegato.responsabileProcedimento = metadati.responsabileProcedimento
+                                                        metadatiAllegato.NumeroDocumento = metadati.NumeroDocumento
+                                                        metadatiAllegato.Oggetto = metadati.Oggetto
+                                                        metadatiAllegato.tipoContratto = metadati.tipoContratto
+                                                        metadatiAllegato.TipoDocumento = metadati.TipoDocumento
+                                                        metadatiAllegato.DataChiusura = metadati.DataChiusura
+                                                        metadatiAllegato.SoggettoProduttoreDocumento = item.SoggettoProduttoreDocumento
+                                                        'conservo l'allegato
+                                                        soapConservaContrattoRequest = New wsConservazione.SoapConservaContrattoRequest
+                                                        soapConservaContrattoRequest.codiceLicenza = Me.AmministrazioneTitolare.CodLicenza
+                                                        soapConservaContrattoRequest.metaDatoContratto = metadatiAllegato
+                                                        soapConservaContrattoRequest.file = Nothing
+                                                        soapConservaContrattoRequest.sourcePath = pathDownload
+                                                        soapConservaContrattoRequest.idUtente = utenteCollegato.Id
+
+                                                        Dim allegatoConservatoResponse = wsConservazione.conservaContrattoOrAllegato(soapConservaContrattoRequest)
+                                                        If (allegatoConservatoResponse.messaggioErrore = "") Then
+                                                            listaDocumentiDaConservare.Add(allegatoConservatoResponse.ListaDocumentiBase(0))
+                                                        Else
+                                                            Throw New Exception(allegatoConservatoResponse.messaggioErrore)
+                                                        End If
+                                                    End If
+
+                                                Next
+                                            End If
+
+                                            wsConservazione.Dispose()
+                                        Else
+                                            Throw New Exception(documentoPrimarioConservato.messaggioErrore)
+                                        End If
+                                    End If
+
+                                Next
+
+                            Else
+                                'ParsecUtility.Utility.MessageBox("Non è possibile mandare in Conservazione il Contratto: contattare l'Amministratore!", False)
+                                sb.AppendLine("Il Contratto con id =  " & documento.IdDocumento & " non è stato trovato: impossibile proseguire!")
+                            End If
+
+                            success = True
+
+                        End If
+                    Else
+                        sb.AppendLine("Il Contratto con id =  " & documento.IdDocumento & " non è stato trovato: impossibile proseguire!")
+                    End If
+
+                    If (success) Then
+
+                        Dim contesto As New ParsecContratti.ContrattoRepository
+                        Dim contr As ParsecContratti.Contratto = contesto.Where(Function(o) o.idContratto = contrattoDaConservare.idContratto).FirstOrDefault
+                        If (Not contr Is Nothing And contr.idDocumentoWS Is Nothing) Then
+                            contr.idDocumentoWS = documentoPrimarioConservato.ListaDocumentiBase(0).idDocumento
+                            contr.stato = ParsecContratti.StatoContrattoEnumeration.STATO_CHIUSO
+                            contr.dataChiusura = Now
+                            contr.idUtenteChiusura = utenteCollegato.Id
+                            contr.InviatoDaFascicolo = True
+                            contesto.SaveChanges()
+                        End If
+
+                        contesto.Dispose()
+
+                        Me.updateFascicoloDocumento(documento.Id, documentoPrimarioConservato.ListaDocumentiBase(0).idDocumento)
+                        contrattoRepository.Dispose()
+                        transaction.Complete()
+                    End If
+
+                Catch eccezione As Exception
+                    success = False
+                    ParsecUtility.Utility.MessageBox(eccezione.Message, False)
+
+                    Try
+                        Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+                        For Each documentoContr In listaDocumentiDaConservare
+                            Dim soapCancellaDocumentoRequest As New wsConservazione.SoapCancellaDocumentoRequest
+                            soapCancellaDocumentoRequest.codiceLicenza = Me.AmministrazioneTitolare.CodLicenza
+                            Dim wsFiltroDocumento As New wsConservazione.DocumentoBaseConservazioneFiltro
+                            wsFiltroDocumento.idDocumento = documentoContr.idDocumento
+                            soapCancellaDocumentoRequest.documentoFiltro = wsFiltroDocumento
+                            Dim esitoOperazioneRequest = wsConservazioneSoap.cancellaDocumento(soapCancellaDocumentoRequest)
+                            If esitoOperazioneRequest.messaggioErrore <> "" Then
+                                Throw New Exception(esitoOperazioneRequest.messaggioErrore)
+                            End If
+
+                        Next
+                        wsConservazioneSoap.Dispose()
+                    Catch ex2 As Exception
+                        ParsecUtility.Utility.MessageBox("Riscontrati problemmi con la Conservazione del Contratto: " & ex2.Message.Substring(0, If(ex2.Message.Contains("!"), ex2.Message.IndexOf("!"), ex2.Message.Length)).ToString, False)
+                    End Try
+
+                End Try
+
+            End Using
+
+            If sb.Length = 0 Then
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = "Invio al Modulo Archivio concluso con successo!"
+                messaggioErroreInvio.errore = False
+                Return messaggioErroreInvio
+            Else
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = sb.ToString
+                messaggioErroreInvio.errore = True
+                Return messaggioErroreInvio
+            End If
+
+        End If
+
+    End Function
+
+    Private Sub sbloccaContratto(ByVal idDocumentoWS As Integer)
+        Try
+           
+            Dim contesto As New ParsecContratti.ContrattoRepository
+            Dim contr As ParsecContratti.Contratto = contesto.Where(Function(o) o.idDocumentoWS = idDocumentoWS).FirstOrDefault
+            If (Not contr Is Nothing) Then
+                contr.idDocumentoWS = Nothing
+                contr.stato = ParsecContratti.StatoContrattoEnumeration.STATO_APERTO
+                contr.dataChiusura = Nothing
+                contr.idUtenteChiusura = Nothing
+                contesto.SaveChanges()
+            End If
+
+            contesto.Dispose()
+
+        Catch ex As Exception
+            'NIENTE
+        End Try
+
+    End Sub
+
+#End Region
+
+#Region "METODI CONSERVAZIONE ATTI AMMINISTRATIVI"
+
+    Protected Function ConservaAttoAmministrativo(ByVal fascicolo As FascicoloConservazione, ByVal documento As FascicoloDocumento) As MessaggioOperazione
+
+        If Not isAlive() Then
+            'ParsecUtility.Utility.MessageBox("Connessione col Modulo Archvio non trovata.", False)
+            Dim messaggioErroreInvio As New MessaggioOperazione
+            messaggioErroreInvio.messaggio = "Connessione col Modulo Archivio non trovata."
+            messaggioErroreInvio.errore = True
+            Return messaggioErroreInvio
+        Else
+
+            If Me.EnteConservatoreAttivo Is Nothing Then
+                ' ParsecUtility.Utility.MessageBox("Nessun Ente Conservatore Attivo risulta configurato: impossibile proseguire!", False)
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = "Nessun Ente Conservatore Attivo risulta configurato: impossibile proseguire!"
+                messaggioErroreInvio.errore = True
+                Return messaggioErroreInvio
+            End If
+
+            Dim attoDecisonaleRepository As New ParsecAtt.DocumentoRepository
+
+            Dim sb As New StringBuilder
+            Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+
+            Dim cliente As ParsecAdmin.Cliente = ParsecUtility.Applicazione.ClienteCorrente
+
+            Dim idDocumento As Integer = 0
+            Dim msg As String = String.Empty
+
+            Dim nomefileFirmato As String = String.Empty
+
+            idDocumento = documento.IdDocumento
+            Dim documentoAtto = attoDecisonaleRepository.GetById(idDocumento)
+            Dim firme = attoDecisonaleRepository.GetFirme(documentoAtto.Id)
+            documentoAtto.Firme = firme
+            Dim nFirmato = GetNomeFileFirmato(documentoAtto)
+            If String.IsNullOrEmpty(nFirmato) Then
+                Dim annoEsercizio = GetAnnoEsercizio(documentoAtto)
+                nFirmato = String.Format("{0}{1}\{2}", ParsecAdmin.WebConfigSettings.GetKey("PathAtti"), annoEsercizio, documentoAtto.Nomefile)
+            End If
+
+            nomefileFirmato = nFirmato
+
+            Try
+                Me.ConservaSingoloAttoAmministrativo(fascicolo, documento, nomefileFirmato, AmministrazioneTitolare.CodLicenza)
+            Catch ex As Exception
+                msg = "L'Atto Amministrativo con Id. " & idDocumento.ToString & " non è stato inviato per il seguente motivo:" & vbCrLf
+                sb.AppendLine(msg & ex.Message)
+            End Try
+
+
+            If sb.Length = 0 Then
+                'Me.infoOperazioneHidden.Value = "Invio al Modulo Archivio concluso con successo!"
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = "Invio al Modulo Archivio concluso con successo!"
+                messaggioErroreInvio.errore = False
+                Return messaggioErroreInvio
+            Else
+                ' ParsecUtility.Utility.MessageBox(sb.ToString, False)
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = sb.ToString
+                messaggioErroreInvio.errore = True
+                Return messaggioErroreInvio
+            End If
+
+            'Me.AggiornaGriglia()
+        End If
+
+    End Function
+
+    Private Sub ConservaSingoloAttoAmministrativo(ByVal fascicolo As FascicoloConservazione, ByVal documentoFasciolo As FascicoloDocumento, ByVal nomeFileFirmato As String, ByVal codiceLicenza As String)
+
+        Dim listaAttiConservati As New List(Of Integer)
+        Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+
+        Try
+            'OTTENGO L'OGGETTO COMPLETO
+            Dim documenti As New ParsecAtt.DocumentoRepository
+            Dim documento = documenti.GetFullById(documentoFasciolo.IdDocumento)
+            Dim documentiFascicoloRep As New ParsecAdmin.FascicoloDocumentoRepository
+
+            If documento Is Nothing Then
+                Throw New ApplicationException("Atto amministrativo non trovato!")
+            End If
+
+
+            Dim idDocumentoConservatoPadre As Integer = 0
+
+
+            Try
+
+                '**************************************************************************************************************
+                'CERCO IL DOCUMENTO DA CONSERVARE
+                '**************************************************************************************************************
+                Dim nomeFilePrimarioDaConservare As String = nomeFileFirmato ' Me.GetNomeFileFirmato(documento)
+
+                'If String.IsNullOrEmpty(nomeFilePrimarioDaConservare) Then
+
+                '    ''SE NON TROVO IL DOCUMENTO FIRMATO CERCO IL DOCUMENTO PDF
+                '    'Dim pubblicazioni As New ParsecMES.AlboRepository
+                '    'Dim pubblicazione As ParsecMES.Pubblicazione = pubblicazioni.GetView(New ParsecMES.FiltroPubblicazione With {.IdDocumento = Me.TaskAttivo.IdDocumento}).FirstOrDefault
+                '    'pubblicazione.Documenti = pubblicazioni.GetDocumenti(pubblicazione.Id)
+                '    'pubblicazioni.Dispose()
+                '    'If Not pubblicazione Is Nothing Then
+
+                '    '    Dim localPath As String = ParsecAdmin.WebConfigSettings.GetKey("PathAttiAlbo")
+                '    '    Dim anno As String = pubblicazione.DataRegistrazione.Value.Year.ToString
+                '    '    Dim documentoPrimario = pubblicazione.Documenti.Where(Function(c) c.IdTipologia = 1).FirstOrDefault
+
+                '    '    If Not documentoPrimario Is Nothing Then
+                '    '        If String.IsNullOrEmpty(documentoPrimario.Nomefile) Then
+                '    '            Throw New Exception(messaggio & vbCrLf & "File '" & nomeFilePrimarioDaConservare.Replace("\", "/") & "' non trovato!")
+                '    '        End If
+                '    '        nomeFilePrimarioDaConservare = localPath & anno & "\" & documentoPrimario.Nomefile
+                '    '    End If
+                '    'End If
+
+                '    'SE NON TROVO IL DOCUMENTO FIRMATO CONSERVO IL DOCUMENTO ODT
+                '    Dim annoEsercizio As Integer = Me.GetAnnoEsercizio(documento)
+                '    nomeFilePrimarioDaConservare = String.Format("{0}{1}\{2}", ParsecAdmin.WebConfigSettings.GetKey("PathAtti"), annoEsercizio, documento.Nomefile)
+                'End If
+
+                If Not IO.File.Exists(nomeFilePrimarioDaConservare) Then
+                    Throw New Exception("File '" & nomeFilePrimarioDaConservare.Replace("\", "/") & "' non trovato!")
+                End If
+                '**************************************************************************************************************
+
+                Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+                Dim soggettoProduttore = utenteCollegato.Cognome & ", " & utenteCollegato.Nome & If(Not String.IsNullOrEmpty(utenteCollegato.CodiceFiscale), ", " & utenteCollegato.CodiceFiscale, "")
+
+
+                '**************************************************************************************************************
+                '1) CONSERVO IL DOCUMENTO FIRMATO O IL PDF ASSOCIATO ALL'ATTO AMMINISTRATIVO
+                '**************************************************************************************************************
+                Dim metadatoAttoSoap As New wsConservazione.SoapConservaAttoRequest
+                metadatoAttoSoap.codiceLicenza = codiceLicenza
+                metadatoAttoSoap.file = Nothing 'IO.File.ReadAllBytes(nomeFilePrimarioDaConservare)
+                metadatoAttoSoap.sourcePath = nomeFilePrimarioDaConservare
+
+                Dim metaDatoAtto As New wsConservazione.MetaDatoAtto
+                metaDatoAtto.DataChiusura = Now
+                metaDatoAtto.DataDocumento = documento.DataDocumento
+                metaDatoAtto.DataProtocollo = documento.DataOraRegistrazione
+                metaDatoAtto.DestinatarioDocumento = "INTERNO"
+                metaDatoAtto.FileName = IO.Path.GetFileName(nomeFilePrimarioDaConservare)
+                metaDatoAtto.IdDocumentoConservatoPadre = Nothing
+                metaDatoAtto.idDocumentoSep = documento.Id
+                metaDatoAtto.idModuloSep = ParsecAdmin.TipoModulo.ATT
+                'metaDatoAtto.Informazioni = documento.Oggetto
+                metaDatoAtto.Informazioni = "Codice = " & fascicolo.CodiceFascicoloSistema & fascicolo.CodiceFascicoloUtente & "; Data Apertura = " & fascicolo.dataApertura.ToShortDateString & "; Data Chiusura = " & fascicolo.dataChiusura.ToShortDateString
+                metaDatoAtto.NumeroDocumento = documento.ContatoreGenerale
+                metaDatoAtto.NumeroProtocollo = If(documento.NumeroProtocollo.HasValue, documento.NumeroProtocollo.Value.ToString, String.Empty)
+                metaDatoAtto.Oggetto = documento.Oggetto
+                metaDatoAtto.SoggettoProduttoreDocumento = soggettoProduttore
+
+                metaDatoAtto.TipoDocumento = documento.ToString.ToUpper
+                'metaDatoAtto.TipoDocumento = documento.DescrizioneTipologia
+
+                'metadti fascicolo
+                metaDatoAtto.IdFascicolo = fascicolo.IdFascicolo
+                metaDatoAtto.ResponsabileProcedimentoFascicolo = fascicolo.responsabile
+                metaDatoAtto.AmministrazioneTitolareFascicolo = AmministrazioneTitolare.CodiceAmministrazione
+                metaDatoAtto.OggettoFascicolo = fascicolo.oggetto
+                metaDatoAtto.AmministrazioniPartecipantiFascicolo = fascicolo.amministrazioniPartecipanti
+
+                Dim fileByte = IO.File.ReadAllBytes(nomeFilePrimarioDaConservare)
+                Select Case EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+                    Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                        'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                        'metaDatoAtto.AlgoritmoImpronta = "SHA-1"
+                        metaDatoAtto.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByte)
+                        'metaDatoAtto.Impronta = BitConverter.ToString(metaDatoAtto.ImprontaFile).Replace("-", "")
+                        'Case ("aruba")
+                        'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                    Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA256
+                        'metaDatoAtto.AlgoritmoImpronta = "SHA-256"
+                        metaDatoAtto.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByte)
+                        'metaDatoAtto.Impronta = BitConverter.ToString(metaDatoAtto.ImprontaFile).Replace("-", "")
+                    Case Else
+                        Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+                End Select
+                metaDatoAtto.AlgoritmoImpronta = EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+
+                If Not String.IsNullOrEmpty(documento.DescrizioneUfficio) Then
+                    metaDatoAtto.Ufficio = documento.DescrizioneUfficio
+                Else
+                    metaDatoAtto.Ufficio = documento.DescrizioneSettore
+                End If
+
+                If documento.TipologiaDocumento = ParsecAtt.TipoDocumento.Delibera Then
+                    metaDatoAtto.OrganoDeliberanteAtto = documento.DescrizioneTipologiaSeduta
+                End If
+
+                metadatoAttoSoap.metaDatoAtto = metaDatoAtto
+
+                Dim documentoConservato = wsConservazioneSoap.conservaAttoAllegato(metadatoAttoSoap)
+
+                If String.IsNullOrEmpty(documentoConservato.messaggioErrore) Then
+                    idDocumentoConservatoPadre = documentoConservato.ListaDocumentiBase(0).idDocumento
+                    listaAttiConservati.Add(idDocumentoConservatoPadre)
+                    'Dim doc = documenti.Where(Function(c) c.Id = documento.Id).FirstOrDefault
+                    ' doc.IdDocumentoWS = idDocumentoConservatoPadre
+                    Dim documentoFascicoloToSave = documentiFascicoloRep.GetById(documentoFasciolo.Id)
+                    documentoFascicoloToSave.IdDocumentoWS = idDocumentoConservatoPadre
+                Else
+                    Throw New Exception(documentoConservato.messaggioErrore)
+                End If
+            Catch ex As Exception
+                Throw New Exception(ex.Message)
+
+            End Try
+
+            '**************************************************************************************************************
+
+            '**************************************************************************************************************
+            '2) CONSERVO GLI ALLEGATI ASSOCIATI ALL'ATTO AMMINISTRATIVO
+            '**************************************************************************************************************
+            Dim messaggioErrore As String = String.Empty
+
+            messaggioErrore = Me.ConservaAllegatiAttoAmministrativo(documento, idDocumentoConservatoPadre, codiceLicenza, listaAttiConservati)
+            If Not String.IsNullOrEmpty(messaggioErrore) Then
+
+                '**************************************************************************************************************
+                'ANNULLO I SALVATAGGI IN CASO DI ERRORE E SOLLEVO L'ECCEZIONE
+                '**************************************************************************************************************
+                Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+                Throw New Exception(messaggioErrore)
+            End If
+            '****************************************************************************************************************************
+
+
+            '****************************************************************************************************************************
+            '3) CONSERVO I FILE P7M ASSOCIATI ALLE FIRME DELLA PROPOSTA DI DELIBERA O DELLA PROPOSTA DI DETERMINA-DECRETO-ORDINANZA
+            '****************************************************************************************************************************
+
+            If documento.TipologiaDocumento = ParsecAtt.TipoDocumento.Delibera Then
+                If documento.IdPadre.HasValue Then
+                    Dim proposta = documenti.GetFullById(documento.IdPadre.Value)
+                    messaggioErrore = Me.ConservaDocumentiFirmatiProposta(fascicolo, proposta, idDocumentoConservatoPadre, codiceLicenza, listaAttiConservati)
+                    If Not String.IsNullOrEmpty(messaggioErrore) Then
+                        '**************************************************************************************************************
+                        'ANNULLO I SALVATAGGI IN CASO DI ERRORE E SOLLEVO L'ECCEZIONE
+                        '**************************************************************************************************************
+                        Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+                        Throw New Exception(messaggioErrore)
+                    End If
+                End If
+            End If
+
+
+            If documento.TipologiaDocumento = ParsecAtt.TipoDocumento.Determina OrElse documento.TipologiaDocumento = ParsecAtt.TipoDocumento.Decreto OrElse documento.TipologiaDocumento = ParsecAtt.TipoDocumento.Ordinanza Then
+                If documento.IdPadre.HasValue Then
+
+                    Dim parametri As New ParsecAdmin.ParametriRepository
+                    Dim parametro = parametri.GetByName("ConservaDocumentiFirmatiPropostaDetermina")
+                    parametri.Dispose()
+
+                    Dim conservaDocumentiFirmatiProposta As Boolean = False
+                    If Not parametro Is Nothing Then
+                        conservaDocumentiFirmatiProposta = (parametro.Valore = "1")
+                    End If
+
+                    If conservaDocumentiFirmatiProposta Then
+                        Dim proposta = documenti.GetFullById(documento.IdPadre.Value)
+                        If Not proposta Is Nothing Then
+                            messaggioErrore = Me.ConservaDocumentiFirmatiProposta(fascicolo, proposta, idDocumentoConservatoPadre, codiceLicenza, listaAttiConservati)
+
+                            If Not String.IsNullOrEmpty(messaggioErrore) Then
+                                '**************************************************************************************************************
+                                'ANNULLO I SALVATAGGI IN CASO DI ERRORE E SOLLEVO L'ECCEZIONE
+                                '**************************************************************************************************************
+                                Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+                                Throw New Exception(messaggioErrore)
+                            End If
+                        End If
+                    End If
+
+                End If
+            End If
+
+
+
+            '****************************************************************************************************************************
+
+            '****************************************************************************************************************************
+            '4) CONSERVO IL FILE P7M DELLA RELATA DI PUBBLICAZIONE
+            '****************************************************************************************************************************
+            messaggioErrore = ConservaRelataPubblicazioneFirmata(fascicolo, documento, idDocumentoConservatoPadre, codiceLicenza, listaAttiConservati)
+            If Not String.IsNullOrEmpty(messaggioErrore) Then
+                '**************************************************************************************************************
+                'ANNULLO I SALVATAGGI IN CASO DI ERRORE E SOLLEVO L'ECCEZIONE
+                '**************************************************************************************************************
+                Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+                Throw New Exception(messaggioErrore)
+            End If
+            '****************************************************************************************************************************
+
+            'eseguo update sull'Atto
+            
+            Dim reg As ParsecAtt.Documento = documenti.Where(Function(c) c.Id = documentoFasciolo.IdDocumento).FirstOrDefault
+            If Not reg Is Nothing And reg.IdDocumentoWS Is Nothing Then
+                reg.IdDocumentoWS = idDocumentoConservatoPadre
+                reg.InviatoDaFascicolo = True
+                documenti.SaveChanges()
+            End If
+
+            documentiFascicoloRep.SaveChanges()
+            documentiFascicoloRep.Dispose()
+            documenti.Dispose()
+
+        Catch ex As Exception
+            Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+            Throw New Exception(ex.Message)
+        End Try
+
+
+    End Sub
+
+    Private Sub sbloccaAtto(ByVal idDocumentoWS As Integer)
+        Try
+            
+            Dim documenti As New ParsecAtt.DocumentoRepository
+            Dim atto As ParsecAtt.Documento = documenti.Where(Function(c) c.IdDocumentoWS = idDocumentoWS).FirstOrDefault
+            If Not atto Is Nothing Then
+                atto.IdDocumentoWS = Nothing
+                atto.InviatoDaFascicolo = False
+                documenti.SaveChanges()
+            End If
+            documenti.Dispose()
+
+        Catch ex As Exception
+            'NIENTE
+        End Try
+
+    End Sub
+
+#End Region
+
+#Region "METODI CONSERVAZIONE PROTOCOLLO"
+
+    Protected Function ConservaProtocollo(ByVal fascicolo As FascicoloConservazione, ByVal documento As FascicoloDocumento) As MessaggioOperazione
+
+        If Not isAlive() Then
+            Dim messaggioErroreInvio As New MessaggioOperazione
+            messaggioErroreInvio.messaggio = "Connessione col Modulo Archivio non trovata."
+            messaggioErroreInvio.errore = True
+            Return messaggioErroreInvio
+        Else
+
+            If Me.EnteConservatoreAttivo Is Nothing Then
+                ' ParsecUtility.Utility.MessageBox("Nessun Ente Conservatore Attivo risulta configurato: impossibile proseguire!", False)
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = "Nessun Ente Conservatore Attivo risulta configurato: impossibile proseguire!"
+                messaggioErroreInvio.errore = True
+                Return messaggioErroreInvio
+            End If
+
+            Dim sb As New StringBuilder
+
+            Dim registrazioniProtocolloRep As New ParsecPro.RegistrazioniRepository
+            Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+
+            Dim idSelezionato As Integer = documento.IdDocumento
+
+            Dim registrazioneProtocollo = registrazioniProtocolloRep.GetById(idSelezionato)
+            If (Not registrazioneProtocollo Is Nothing AndAlso Not registrazioneProtocollo.Allegati Is Nothing) Then
+
+                'documneto primario (se esiste) come Documento principale
+                Dim allegatoPrimario = registrazioneProtocollo.Allegati.Where(Function(w) w.IdTipologiaDocumento = 1).FirstOrDefault
+                Dim allegatiPrimariComeAllegatiSecondari As List(Of ParsecPro.Allegato)
+                If (Not allegatoPrimario Is Nothing) Then
+                    allegatiPrimariComeAllegatiSecondari = registrazioneProtocollo.Allegati.Where(Function(w) w.Id <> allegatoPrimario.Id).ToList
+                Else
+                    ' non esiste alcun documento primario, quindi prendo il primo dei secondari
+                    allegatoPrimario = registrazioneProtocollo.Allegati.Where(Function(w) w.IdTipologiaDocumento = 0).FirstOrDefault
+                    'i restanti li metto come allegati
+                    allegatiPrimariComeAllegatiSecondari = registrazioneProtocollo.Allegati.Where(Function(w) w.Id <> allegatoPrimario.Id).ToList
+                End If
+
+                If allegatoPrimario Is Nothing Then
+                    sb.AppendLine("La Registrazione con Numero di Protocollo " & registrazioneProtocollo.NumeroProtocollo & " del " & registrazioneProtocollo.DataImmissione.Value.ToShortDateString & " non è stata inviata al modulo Archivio poichè non possiede Allegati!")
+                Else
+                    Try
+                        Dim errore As Boolean = False
+                        Dim listaIdDocumentiConservati As New List(Of Integer)
+                        Dim documentoConservatoPrimario = Me.conservaAllegatoProtocollo(fascicolo, registrazioneProtocollo, allegatoPrimario, AmministrazioneTitolare, Nothing)
+                        If (documentoConservatoPrimario.ListaDocumentiBase(0).idDocumento > 0) Then
+                            listaIdDocumentiConservati.Add(documentoConservatoPrimario.ListaDocumentiBase(0).idDocumento)
+                            For Each item In allegatiPrimariComeAllegatiSecondari
+                                Dim allegatoSecondario = Me.conservaAllegatoProtocollo(fascicolo, registrazioneProtocollo, item, AmministrazioneTitolare, documentoConservatoPrimario.ListaDocumentiBase(0).idDocumento)
+                                If (allegatoSecondario.messaggioErrore = "") Then
+                                    listaIdDocumentiConservati.Add(allegatoSecondario.ListaDocumentiBase(0).idDocumento)
+                                Else
+                                    'qualcosa è andato male nei secondari e devo cancellare quelli già mandati al modulo archivio
+                                    errore = True
+                                    For Each idSecondario In listaIdDocumentiConservati
+                                        Me.CancellaDocumentoWS(idSecondario, AmministrazioneTitolare)
+                                    Next
+                                    Me.CancellaDocumentoWS(documentoConservatoPrimario.ListaDocumentiBase(0).idDocumento, AmministrazioneTitolare)
+                                    sb.AppendLine("La Registrazione con Numero di Protocollo " & registrazioneProtocollo.NumeroProtocollo & " del " & registrazioneProtocollo.DataImmissione.Value.ToShortDateString & " non è stata inviata per il seguente motivo:" & vbCrLf & allegatoSecondario.messaggioErrore)
+                                End If
+                            Next
+                        Else
+                            'eeore nel primario
+                            sb.AppendLine("La Registrazione con Numero di Protocollo " & registrazioneProtocollo.NumeroProtocollo & " del " & " " & registrazioneProtocollo.DataImmissione.Value.ToShortDateString & " non è stata inviata per il seguente motivo:" & vbCrLf & documentoConservatoPrimario.messaggioErrore)
+                            errore = True
+                        End If
+
+                        If Not errore Then
+                            Me.updateFascicoloDocumento(documento.Id, documentoConservatoPrimario.ListaDocumentiBase(0).idDocumento)
+                            'eseguo update sul Protocollo
+                           
+                            Dim registrazioni As New ParsecPro.RegistrazioniRepository
+                            Dim reg As ParsecPro.Registrazione = registrazioni.Where(Function(c) c.Id = documento.IdDocumento).FirstOrDefault
+                            If Not reg Is Nothing And reg.IdDocumentoWS Is Nothing Then
+                                reg.IdDocumentoWS = documentoConservatoPrimario.ListaDocumentiBase(0).idDocumento
+                                reg.InviatoDaFascicolo = True
+                                registrazioni.SaveChanges()
+                            End If
+                            registrazioni.Dispose()
+
+
+                        End If
+
+                    Catch ex As Exception
+                        sb.AppendLine("La Registrazione con Numero di Protocollo " & registrazioneProtocollo.NumeroProtocollo & " del " & " " & registrazioneProtocollo.DataImmissione.Value.ToShortDateString & " non è stata inviata per il seguente motivo:" & vbCrLf & ex.Message)
+                    End Try
+                End If
+            End If
+
+            If sb.Length = 0 Then
+                'Me.infoOperazioneHidden.Value = "Invio al Modulo Archivio concluso con successo!"
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = "Invio al Modulo Archivio concluso con successo!"
+                messaggioErroreInvio.errore = False
+                Return messaggioErroreInvio
+                Return Nothing
+            Else
+                'ParsecUtility.Utility.MessageBox(sb.ToString, False)
+                Dim messaggioErroreInvio As New MessaggioOperazione
+                messaggioErroreInvio.messaggio = sb.ToString
+                messaggioErroreInvio.errore = True
+                Return messaggioErroreInvio
+            End If
+
+            'Me.AggiornaGriglia()
+        End If
+
+
+
+    End Function
+
+    Private Function conservaAllegatoProtocollo(ByVal fascicolo As FascicoloConservazione, ByVal registrazioneProtocollo As ParsecPro.Registrazione, ByVal allegato As ParsecPro.Allegato, ByVal cliente As ParsecAdmin.Cliente, ByVal idDocumentoWsPadre As Integer?) As wsConservazione.SoapDocumentoBaseResponse
+
+        Try
+
+            Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+            Dim percorsoRoot As String = ParsecAdmin.WebConfigSettings.GetKey("PathDocumenti")
+
+            Dim pathDownload As String = String.Empty
+            Dim nomefile As String = String.Empty
+
+            If Not String.IsNullOrEmpty(allegato.NomeFileFirmato) Then
+                nomefile = allegato.Id.ToString.PadLeft(9, "0") & "_" & "1".PadLeft(4, "0") & "_" & allegato.NomeFileFirmato
+            Else
+                nomefile = allegato.Id.ToString.PadLeft(9, "0") & "_" & "1".PadLeft(4, "0") & "_" & allegato.NomeFile
+            End If
+
+            pathDownload = percorsoRoot & allegato.PercorsoRelativo & nomefile
+
+            Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+
+            If (IO.File.Exists(pathDownload)) Then
+                Dim metaDatoProtocollo As New wsConservazione.MetaDatoProtocollo
+
+                metaDatoProtocollo.FileName = nomefile
+
+                'If (registrazioneProtocollo.Note = "") Then
+                '    metaDatoProtocollo.Informazioni = "Protocollo del " & registrazioneProtocollo.NumeroProtocollo & " del " & registrazioneProtocollo.DataImmissione.Value.ToShortDateString
+                'Else
+                '    metaDatoProtocollo.Informazioni = registrazioneProtocollo.Note
+                'End If
+
+                metaDatoProtocollo.Oggetto = registrazioneProtocollo.Oggetto
+                metaDatoProtocollo.idDocumentoSep = registrazioneProtocollo.Id
+                metaDatoProtocollo.idModuloSep = 2
+                metaDatoProtocollo.TipoDocumento = "DOC_PROTOCOLLO"
+                metaDatoProtocollo.DataProtocollo = registrazioneProtocollo.DataImmissione
+                metaDatoProtocollo.NumeroProtocollo = registrazioneProtocollo.NumeroProtocollo
+
+                metaDatoProtocollo.tipologiaDocumentoProtocollato = registrazioneProtocollo.DescrizioneTipologiaRegistristrazione.ToUpper
+                If (metaDatoProtocollo.tipologiaDocumentoProtocollato = "PARTENZA" Or metaDatoProtocollo.tipologiaDocumentoProtocollato = "INTERNO") Then
+                    metaDatoProtocollo.destinatarioDocumentoProtocollato = registrazioneProtocollo.ElencoReferentiEsterni
+                    metaDatoProtocollo.mittenteDocumentoProtocollato = registrazioneProtocollo.ElencoReferentiInterni
+                End If
+                If (metaDatoProtocollo.tipologiaDocumentoProtocollato = "ARRIVO") Then
+                    metaDatoProtocollo.destinatarioDocumentoProtocollato = registrazioneProtocollo.ElencoReferentiInterni
+                    metaDatoProtocollo.mittenteDocumentoProtocollato = registrazioneProtocollo.ElencoReferentiEsterni
+                End If
+
+                metaDatoProtocollo.IdDocumentoConservatoPadre = idDocumentoWsPadre
+                metaDatoProtocollo.NumeroDocumento = metaDatoProtocollo.NumeroProtocollo
+                metaDatoProtocollo.DataDocumento = metaDatoProtocollo.DataProtocollo
+
+                metaDatoProtocollo.DataChiusura = Now
+                metaDatoProtocollo.Informazioni = "Codice = " & fascicolo.CodiceFascicoloSistema & fascicolo.CodiceFascicoloUtente & "; Data Apertura = " & fascicolo.dataApertura.ToShortDateString & "; Data Chiusura = " & fascicolo.dataChiusura.ToShortDateString
+                'metadti fascicolo
+                If (Not idDocumentoWsPadre.HasValue) Then
+                    'docuemntoprincipale
+                    metaDatoProtocollo.IdFascicolo = fascicolo.IdFascicolo
+                    metaDatoProtocollo.ResponsabileProcedimentoFascicolo = fascicolo.responsabile
+                    metaDatoProtocollo.AmministrazioneTitolareFascicolo = AmministrazioneTitolare.CodiceAmministrazione
+                    metaDatoProtocollo.OggettoFascicolo = fascicolo.oggetto
+                    metaDatoProtocollo.AmministrazioniPartecipantiFascicolo = fascicolo.amministrazioniPartecipanti
+                End If
+
+                Dim fileByte = IO.File.ReadAllBytes(pathDownload)
+                Select Case EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+                    Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                        'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                        'metaDatoProtocollo.AlgoritmoImpronta = "SHA-1"
+                        metaDatoProtocollo.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByte)
+                        'metaDatoProtocollo.Impronta = BitConverter.ToString(metaDatoProtocollo.ImprontaFile).Replace("-", "")
+                        ' Case ("aruba")
+                        'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                    Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA256
+                        'metaDatoProtocollo.AlgoritmoImpronta = "SHA-256"
+                        metaDatoProtocollo.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByte)
+                        'metaDatoProtocollo.Impronta = BitConverter.ToString(metaDatoProtocollo.ImprontaFile).Replace("-", "")
+                    Case Else
+                        Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+                End Select
+                metaDatoProtocollo.AlgoritmoImpronta = EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+
+                Dim metaDatoProtocolloSoap As New wsConservazione.SoapConservaProtocolloRequest
+                metaDatoProtocolloSoap.codiceLicenza = cliente.CodLicenza
+                metaDatoProtocolloSoap.metaDatoProtocollo = metaDatoProtocollo
+                metaDatoProtocolloSoap.file = Nothing 'IO.File.ReadAllBytes(pathDownload)
+                metaDatoProtocolloSoap.sourcePath = pathDownload
+
+                Dim documentoConservato = wsConservazioneSoap.conservaProtocollo(metaDatoProtocolloSoap)
+                If (documentoConservato.messaggioErrore = "") Then
+                    Return documentoConservato
+                End If
+            Else
+                Throw New Exception("File non trovato!")
+            End If
+        Catch ex As Exception
+            Throw New Exception(ex.Message)
+        End Try
+
+        Return Nothing
+
+    End Function
+
+    Private Sub sbloccaProtocollo(ByVal idDocumentoWS As Integer)
+        Try
+
+            Dim registrazioni As New ParsecPro.RegistrazioniRepository
+            Dim registrazione As ParsecPro.Registrazione = registrazioni.Where(Function(c) c.IdDocumentoWS = idDocumentoWS).FirstOrDefault
+            If Not registrazione Is Nothing Then
+                registrazione.IdDocumentoWS = Nothing
+                registrazione.InviatoDaFascicolo = False
+                registrazioni.SaveChanges()
+            End If
+            registrazioni.Dispose()
+
+        Catch ex As Exception
+            'NIENTE
+        End Try
+
+    End Sub
+
+#End Region
+
+#Region "CONSERVAZIONE MASSIVA"
+
+    Private Sub SbloccaFascicolo(ByVal item As GridDataItem)
+
+        If (Not Me.isAlive) Then
+            ParsecUtility.Utility.MessageBox("Connessione col Modulo Archivio non trovata.", False)
+            Exit Sub
+        End If
+
+        Dim listaMessaggi As New List(Of MessaggioOperazione)
+
+        Dim fascicoloRepository As New ParsecAdmin.FascicoloDocumentoRepository
+        Dim fascicoloDocumentoRepository As New ParsecAdmin.FascicoloDocumentoRepository
+
+        Dim idFascicolo As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("IdFascicolo")
+
+        Dim fascicolo = Me.Fascicoli.Where(Function(c) c.IdFascicolo = idFascicolo).FirstOrDefault
+        'Dim fascicoloAmministrazioniRepository As New ParsecAdmin.FascicoloAmministrazionePartecipanteRepository
+
+        Dim documentiFascicolo = fascicolo.listaDocumenti.Where(Function(w) Not w.IdDocumentoWS Is Nothing And w.Stato Is Nothing)
+        Dim messaggioOperazione As New MessaggioOperazione
+        Dim wsConservazione As New wsConservazione.wsConservazione
+        Dim soapGetDocumentoRequest As New wsConservazione.SoapGetDocumentoRequest
+        For Each documento In documentiFascicolo
+            Try
+                messaggioOperazione = New MessaggioOperazione
+                wsConservazione = New wsConservazione.wsConservazione
+                soapGetDocumentoRequest = New wsConservazione.SoapGetDocumentoRequest
+                soapGetDocumentoRequest.codiceLicenza = Me.AmministrazioneTitolare.CodLicenza
+                Dim filtroDocumento As New wsConservazione.DocumentoBaseConservazioneFiltro
+                filtroDocumento.idDocumento = documento.IdDocumentoWS
+                soapGetDocumentoRequest.documentoFiltro = filtroDocumento
+                Dim documentoWS = wsConservazione.getDocumento(soapGetDocumentoRequest)
+                If ((documentoWS.ListaDocumentiBase.Any AndAlso documentoWS.ListaDocumentiBase(0).idPacchettoVersamento Is Nothing) Or Not documentoWS.ListaDocumentiBase.Any) Then
+                    'cancello il documento tramite Servizio Web
+                    messaggioOperazione = SbloccaDocumentoSingolo(documento.TipoDocumento, documento.Id)
+                    If messaggioOperazione.errore Then
+                        listaMessaggi.Add(messaggioOperazione)
+                    End If
+                End If
+            Catch ex As Exception
+                messaggioOperazione.errore = True
+                messaggioOperazione.messaggio = ex.Message
+                listaMessaggi.Add(messaggioOperazione)
+            End Try
+
+        Next
+        'fascicoloAmministrazioniRepository.Dispose()
+        If Not listaMessaggi.Any Then
+            Me.infoOperazioneHidden.Value = "Sblocco Fascicolo avvenuto con successo!"
+        Else
+            'ParsecUtility.Utility.MessageBox(sb.ToString, False)
+            Dim messaggio As String = String.Join(";", listaMessaggi.Select(Function(s) s.messaggio).ToArray)
+            ParsecUtility.Utility.MessageBox(messaggio, False)
+        End If
+
+        Me.AggiornaGriglia()
+
+    End Sub
+
+    Protected Sub ConservaFascicoliImageButton_Click(sender As Object, e As System.Web.UI.ImageClickEventArgs) Handles ConservaFascicoliImageButton.Click
+
+        If Not Me.isAlive() Then
+            ParsecUtility.Utility.MessageBox("Connessione col Modulo Archivio non trovata.", False)
+            Exit Sub
+        Else
+            Dim i As Integer = 0
+            Dim percentCompleted As Integer = 0
+            Dim idFascicolo As Integer = 0
+            Dim msg As String = String.Empty
+
+            Dim nomefileFirmato As String = String.Empty
+
+            Dim count = Me.FascicoliGridView.SelectedItems.Count
+            Dim context = RadProgressContext.Current
+            context.PrimaryTotal = count.ToString
+
+            'Dim fascicoloRepository As New ParsecAdmin.FascicoloDocumentoRepository
+            'Dim fascicoloDocumentoRepository As New ParsecAdmin.FascicoloDocumentoRepository
+
+            Dim listaMessaggi As New List(Of MessaggioOperazione)
+
+            For Each selectedItem As GridDataItem In Me.FascicoliGridView.SelectedItems
+                i += 1
+                context.PrimaryValue = i.ToString
+                percentCompleted = CInt((0.5F + ((100.0F * i) / count)))
+                context.PrimaryPercent = percentCompleted.ToString
+
+                If Not Response.IsClientConnected Then
+                    Exit For
+                End If
+
+                idFascicolo = selectedItem.OwnerTableView.DataKeyValues(selectedItem.ItemIndex)("IdFascicolo")
+
+                Dim fascicolo = Me.Fascicoli.Where(Function(c) c.IdFascicolo = idFascicolo).FirstOrDefault
+                Dim fascicoloAmministrazioniRepository As New ParsecAdmin.FascicoloAmministrazionePartecipanteRepository
+                Dim codiciIPAAmministrazioni = fascicoloAmministrazioniRepository.GetQuery().Where(Function(w) w.IdFascicolo = fascicolo.IdFascicolo).Select(Function(s) s.CodiceIpa).ToList
+                Dim listaIPAAmministrazioni = String.Join(";", codiciIPAAmministrazioni.ToArray())
+                fascicolo.amministrazioniPartecipanti = listaIPAAmministrazioni
+                Dim documentiFascicolo = fascicolo.listaDocumenti.Where(Function(w) w.IdDocumentoWS Is Nothing And w.Stato Is Nothing)
+                Dim messaggio As New MessaggioOperazione
+                For Each documento In documentiFascicolo
+                    messaggio = ComandiInviaConservazione(fascicolo, documento)
+                    If messaggio.errore Then
+                        listaMessaggi.Add(messaggio)
+                    End If
+                Next
+                fascicoloAmministrazioniRepository.Dispose()
+            Next
+
+            context.OperationComplete = True
+
+            If Not listaMessaggi.Any Then
+                Me.infoOperazioneHidden.Value = "Invio al Modulo Archivio concluso con successo!"
+            Else
+                'ParsecUtility.Utility.MessageBox(sb.ToString, False)
+                Dim messaggio As String = String.Join(";", listaMessaggi.Select(Function(s) s.messaggio).ToArray)
+                ParsecUtility.Utility.MessageBox(messaggio, False)
+            End If
+
+            Me.AggiornaGriglia()
+        End If
+
+    End Sub
+
+    Private Function GetVersione(ByVal nomeFile As String) As String
+        Dim dot As Integer = nomeFile.IndexOf(".")
+        Dim v As Integer = nomeFile.LastIndexOf("_v") + 2
+        Dim versione = nomeFile.Substring(v, dot - v)
+        Return versione
+    End Function
+
+    Private Function GetAnnoEsercizio(documento As ParsecAtt.Documento) As Integer
+        Dim annoEsercizio As Integer = Now.Year
+        Try
+            Dim rgx As System.Text.RegularExpressions.Regex = New System.Text.RegularExpressions.Regex("\d{4}")
+            annoEsercizio = CInt(rgx.Match(documento.Nomefile).Value)
+        Catch ex As Exception
+
+        End Try
+
+        Return annoEsercizio
+    End Function
+
+    Private Function GetNomeFileFirmato(ByVal documento As ParsecAtt.Documento) As String
+
+        Dim nomefileFirmato As String = IO.Path.GetFileNameWithoutExtension(documento.Nomefile) & ".pdf.p7m"
+        Dim annoEsercizio As Integer = Me.GetAnnoEsercizio(documento)
+        Dim localPath As String = String.Format("{0}{1}\{2}", ParsecAdmin.WebConfigSettings.GetKey("PathAtti"), annoEsercizio, nomefileFirmato)
+
+        If Not IO.File.Exists(localPath) Then
+
+            Dim tipoDocumento = documento.TipologiaDocumento
+            Dim proposta As Boolean = tipoDocumento = ParsecAtt.TipoDocumento.PropostaDetermina OrElse tipoDocumento = ParsecAtt.TipoDocumento.PropostaDelibera OrElse tipoDocumento = ParsecAtt.TipoDocumento.PropostaOrdinanza OrElse tipoDocumento = ParsecAtt.TipoDocumento.PropostaDecreto
+
+            Dim prefissoProposta As String = "Prop"
+
+           
+            Dim versione As Integer = 0
+            Dim v As Integer = 0
+
+            For Each f In documento.Firme
+                If Not String.IsNullOrEmpty(f.FileFirmato) Then
+                    If Not proposta Then
+                        'ESCLUDO LE PROPOSTE FIRMATE SE IL DOCUMENTO E' UN ATTO DEFINITIVO
+                        If Not f.FileFirmato.StartsWith(prefissoProposta) Then
+                            v = GetVersione(f.FileFirmato)
+                            If v > versione Then
+                                versione = v
+                            End If
+                        End If
+
+                    End If
+
+                End If
+            Next
+
+            Dim token = nomefileFirmato.Split("_")
+            token(3) = "v" & versione.ToString & ".pdf.p7m"
+
+            nomefileFirmato = String.Join("_", token)
+            localPath = String.Format("{0}{1}\{2}", ParsecAdmin.WebConfigSettings.GetKey("PathAtti"), annoEsercizio, nomefileFirmato)
+            If IO.File.Exists(localPath) Then
+                Return localPath
+            End If
+        Else
+            Return localPath
+        End If
+        Return Nothing
+    End Function
+
+    Private Function ConservaDocumentiFirmatiProposta(ByVal fascicolo As FascicoloConservazione, ByVal proposta As ParsecAtt.Documento, ByVal idDocumentoConservatoPadre As Integer, ByVal codiceLicenza As String, ByRef documentiConservati As List(Of Integer)) As String
+
+        Dim firmeProposta = proposta.Firme.Where(Function(c) Not String.IsNullOrEmpty(c.FileFirmato)).GroupBy(Function(c) c.FileFirmato).Select(Function(c) c.FirstOrDefault).ToList
+        Dim messaggioErrore As String = String.Empty
+        Dim annoEsercizio As Integer = Me.GetAnnoEsercizio(proposta)
+        Dim localPath As String = String.Empty
+        Dim pathAtti As String = ParsecAdmin.WebConfigSettings.GetKey("PathAtti")
+
+        Dim request As wsConservazione.SoapConservaAttoRequest = Nothing
+        Dim metaDato As wsConservazione.MetaDatoAtto = Nothing
+        Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+        Dim documentoConservato As wsConservazione.SoapDocumentoBaseResponse = Nothing
+
+
+        'CONSERVO I FILE P7M ASSOCIATI ALLE FIRME DELLA PROPOSTA DI DELIBERA
+        If firmeProposta.Count > 0 Then
+            Try
+                For Each firmaProposta In firmeProposta
+
+                    localPath = String.Format("{0}{1}\{2}", pathAtti, annoEsercizio, firmaProposta.FileFirmato)
+
+                    If Not IO.File.Exists(localPath) Then
+                        messaggioErrore = "File '" & localPath.Replace("\", "/") & "' non trovato!"
+                        Exit For
+                    Else
+
+                        request = New wsConservazione.SoapConservaAttoRequest
+                        request.codiceLicenza = codiceLicenza
+                        request.file = Nothing 'IO.File.ReadAllBytes(localPath)
+                        request.sourcePath = localPath
+
+                        metaDato = New wsConservazione.MetaDatoAtto
+                        metaDato.DataChiusura = Now
+                        metaDato.FileName = firmaProposta.FileFirmato
+                        metaDato.IdDocumentoConservatoPadre = idDocumentoConservatoPadre
+
+                        Select Case proposta.TipologiaDocumento
+                            Case ParsecAtt.TipoDocumento.PropostaDelibera
+                                metaDato.TipoDocumento = "DELIBERA"
+                            Case ParsecAtt.TipoDocumento.PropostaDetermina
+                                metaDato.TipoDocumento = "DETERMINA"
+                            Case ParsecAtt.TipoDocumento.PropostaDecreto
+                                metaDato.TipoDocumento = "DECRETO"
+                            Case ParsecAtt.TipoDocumento.PropostaOrdinanza
+                                metaDato.TipoDocumento = "ORDINANZA"
+                        End Select
+
+                        metaDato.idDocumentoSep = proposta.Id
+                        metaDato.idModuloSep = ParsecAdmin.TipoModulo.ATT
+                        metaDato.Informazioni = "Codice = " & Fascicolo.CodiceFascicoloSistema & Fascicolo.CodiceFascicoloUtente & "; Data Apertura = " & Fascicolo.DataApertura.ToShortDateString & "; Data Chiusura = " & Fascicolo.DataChiusura.ToShortDateString 'proposta.Oggetto
+                        metaDato.Oggetto = proposta.Oggetto
+
+                        Dim fileByte = IO.File.ReadAllBytes(localPath)
+                        Select Case EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+                            Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                                'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                                'metaDatoProtocollo.AlgoritmoImpronta = "SHA-1"
+                                metaDato.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByte)
+                                'metaDato.Impronta = BitConverter.ToString(metaDato.ImprontaFile).Replace("-", "")
+                                ' Case ("aruba")
+                                'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                            Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA256
+                                'metaDatoProtocollo.AlgoritmoImpronta = "SHA-256"
+                                metaDato.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByte)
+                                'metaDato.Impronta = BitConverter.ToString(metaDato.ImprontaFile).Replace("-", "")
+                            Case Else
+                                Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+                        End Select
+                        metaDato.AlgoritmoImpronta = EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+
+                        request.metaDatoAtto = metaDato
+                        documentoConservato = wsConservazioneSoap.conservaAttoAllegato(request)
+
+                        If String.IsNullOrEmpty(documentoConservato.messaggioErrore) Then
+                            documentiConservati.Add(documentoConservato.ListaDocumentiBase(0).idDocumento)
+                        Else
+                            messaggioErrore = documentoConservato.messaggioErrore
+                            Exit For
+                        End If
+
+                    End If
+                Next
+            Catch ex As Exception
+                messaggioErrore = ex.Message
+            End Try
+
+        Else
+            'CONSERVO IL FILE ODT DELLA PROPOSTA DI DELIBERA
+        End If
+
+        Return messaggioErrore
+    End Function
+
+    Private Function ConservaAllegatiAttoAmministrativo(ByVal documento As ParsecAtt.Documento, ByVal idDocumentoConservatoPadre As Integer, ByVal codiceLicenza As String, ByRef documentiConservati As List(Of Integer)) As String
+
+        Dim percorsoRoot As String = ParsecAdmin.WebConfigSettings.GetKey("PathDocumenti")
+        percorsoRoot = percorsoRoot.Remove(percorsoRoot.Length - 1, 1)
+        Dim messaggioErrore As String = String.Empty
+        Dim pathDownload As String = String.Empty
+        Dim nomefile As String = String.Empty
+        Dim request As wsConservazione.SoapConservaAttoRequest = Nothing
+        Dim metaDato As wsConservazione.MetaDatoAtto = Nothing
+        Dim documentoConservato As wsConservazione.SoapDocumentoBaseResponse = Nothing
+        Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+
+        'CONSERVO GLI ALLEGATI ASSOCIATI ALL'ATTO AMMINISTRATIVO
+        Try
+            For Each allegato In documento.Allegati
+                Try
+
+                    If Not String.IsNullOrEmpty(allegato.NomeFileFirmato) Then
+                        nomefile = allegato.NomeFileFirmato
+                    Else
+                        nomefile = allegato.Nomefile
+                    End If
+
+                    pathDownload = percorsoRoot & allegato.PercorsoRelativo & nomefile
+                    If Not IO.File.Exists(pathDownload) Then
+                        messaggioErrore = "File '" & pathDownload.Replace("\", "/") & "' non trovato!"
+                        Exit For
+                    End If
+
+                    request = New wsConservazione.SoapConservaAttoRequest
+                    request.codiceLicenza = codiceLicenza
+                    request.file = Nothing 'IO.File.ReadAllBytes(pathDownload)
+                    request.sourcePath = pathDownload
+
+                    metaDato = New wsConservazione.MetaDatoAtto
+                    metaDato.DataChiusura = Now
+
+                    metaDato.FileName = nomefile
+
+                    metaDato.IdDocumentoConservatoPadre = idDocumentoConservatoPadre
+                    metaDato.TipoDocumento = documento.ToString.ToUpper '"DOCUMENTO_GENERICO"
+                    metaDato.idDocumentoSep = allegato.Id
+                    metaDato.idModuloSep = ParsecAdmin.TipoModulo.ATT
+                    metaDato.Informazioni = allegato.Oggetto
+                    metaDato.Oggetto = allegato.Oggetto
+
+                    Dim fileByte = IO.File.ReadAllBytes(pathDownload)
+                    Select Case EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+                        Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                            'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                            'metaDato.AlgoritmoImpronta = "SHA-1"
+                            metaDato.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByte)
+                            'metaDato.Impronta = BitConverter.ToString(metaDato.ImprontaFile).Replace("-", "")
+                            'Case ("aruba")
+                            'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                        Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA256
+                            'metaDato.AlgoritmoImpronta = "SHA-256"
+                            metaDato.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByte)
+                            'metaDato.Impronta = BitConverter.ToString(metaDato.ImprontaFile).Replace("-", "")
+                        Case Else
+                            Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+                    End Select
+                    metaDato.AlgoritmoImpronta = EnteConservatoreAttivo.Denominazione.ToUpper
+
+                    request.metaDatoAtto = metaDato
+                    documentoConservato = wsConservazioneSoap.conservaAttoAllegato(request)
+
+                    If String.IsNullOrEmpty(documentoConservato.messaggioErrore) Then
+                        documentiConservati.Add(documentoConservato.ListaDocumentiBase(0).idDocumento)
+                    Else
+                        messaggioErrore = documentoConservato.messaggioErrore
+                        Exit For
+                    End If
+                Catch ex As Exception
+                    messaggioErrore = ex.Message
+                    Exit For
+                End Try
+            Next
+        Catch ex As Exception
+            messaggioErrore = ex.Message
+        End Try
+
+        Return messaggioErrore
+    End Function
+
+    Private Sub CancellaDocumentiConservati(ByVal codiceLicenza As String, ByVal documentiConservati As List(Of Integer))
+        Dim cancellazioneRequest As wsConservazione.SoapCancellaDocumentoRequest = Nothing
+        Dim wsConservazioneSoap As wsConservazione.wsConservazione = Nothing
+
+        If documentiConservati.Count > 0 Then
+            wsConservazioneSoap = New wsConservazione.wsConservazione
+            cancellazioneRequest = New wsConservazione.SoapCancellaDocumentoRequest
+            cancellazioneRequest.codiceLicenza = codiceLicenza
+            cancellazioneRequest.documentoFiltro = New wsConservazione.DocumentoBaseConservazioneFiltro
+        End If
+
+        For Each documentoConservato In documentiConservati
+            Try
+                cancellazioneRequest.documentoFiltro.idDocumento = documentoConservato
+                wsConservazioneSoap.cancellaDocumento(cancellazioneRequest)
+            Catch ex As Exception
+                'NIENTE
+            End Try
+        Next
+    End Sub
+
+    Private Function ConservaRelataPubblicazioneFirmata(ByVal fascicolo As FascicoloConservazione, ByVal documento As ParsecAtt.Documento, ByVal idDocumentoConservatoPadre As Integer, ByVal codiceLicenza As String, ByRef documentiConservati As List(Of Integer)) As String
+        Dim messaggioErrore As String = String.Empty
+
+        Dim pathDownload As String = String.Empty
+        Dim request As wsConservazione.SoapConservaAttoRequest = Nothing
+        Dim metaDato As wsConservazione.MetaDatoAtto = Nothing
+        Dim documentoConservato As wsConservazione.SoapDocumentoBaseResponse = Nothing
+        Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+        Dim relataPubblicazioneFirmata As String = String.Empty
+
+        'CONSERVO IL FILE P7M ASSOCIATO ALLA REALATA DI PUBBLICAZIONE
+        Try
+
+            Dim pubblicazioni As New ParsecMES.AlboRepository
+            Dim pubblicazione = pubblicazioni.Where(Function(c) c.IdDocumento = documento.Id And c.IdModulo = ParsecAdmin.TipoModulo.ATT).FirstOrDefault
+            If Not pubblicazione Is Nothing Then
+                Dim documenti As New ParsecMES.DocumentiRepository
+                Dim idPubblicazione As Integer = pubblicazione.Id
+                ' Dim documentoPrimario = documenti.Where(Function(c) c.IdAlbo = idPubblicazione And c.IdTipologia = 1).Select(Function(c) c.NomeFileFirmato)
+                Dim documentoPrimario = documenti.Where(Function(c) c.IdAlbo = idPubblicazione And c.IdTipologia = 1).Select(Function(c) c.Nomefile)
+                If documentoPrimario.Any Then
+                    Dim anno As String = pubblicazione.DataRegistrazione.Value.Year.ToString
+                    Dim localPath As String = ParsecAdmin.WebConfigSettings.GetKey("PathAttiAlbo")
+                    relataPubblicazioneFirmata = documentoPrimario.FirstOrDefault & ".p7m"
+                    pathDownload = localPath & anno & "\" & relataPubblicazioneFirmata
+                    documenti.Dispose()
+                End If
+            End If
+            pubblicazioni.Dispose()
+
+            If String.IsNullOrEmpty(pathDownload) Then
+                Return messaggioErrore
+            End If
+            If Not IO.File.Exists(pathDownload) Then
+                Return messaggioErrore
+            End If
+
+
+            request = New wsConservazione.SoapConservaAttoRequest
+            request.codiceLicenza = codiceLicenza
+            request.file = Nothing 'IO.File.ReadAllBytes(pathDownload)
+            request.sourcePath = pathDownload
+
+            metaDato = New wsConservazione.MetaDatoAtto
+            metaDato.DataChiusura = Now
+            metaDato.FileName = relataPubblicazioneFirmata
+            metaDato.IdDocumentoConservatoPadre = idDocumentoConservatoPadre
+            metaDato.TipoDocumento = documento.ToString.ToUpper
+            metaDato.idDocumentoSep = documento.Id
+            metaDato.idModuloSep = ParsecAdmin.TipoModulo.ATT
+            'metaDato.Informazioni = documento.Oggetto
+            metaDato.Informazioni = "Codice = " & fascicolo.CodiceFascicoloSistema & fascicolo.CodiceFascicoloUtente & "; Data Apertura = " & fascicolo.dataApertura.ToShortDateString & "; Data Chiusura = " & fascicolo.dataChiusura.ToShortDateString
+            metaDato.Oggetto = documento.Oggetto
+
+            Dim fileByte = IO.File.ReadAllBytes(pathDownload)
+            Select Case EnteConservatoreAttivo.algoritmoImpronta.ToUpper
+                Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                    'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                    'metaDato.AlgoritmoImpronta = "SHA-1"
+                    metaDato.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByte)
+                    'metaDato.Impronta = BitConverter.ToString(metaDato.ImprontaFile).Replace("-", "")
+                    'Case ("aruba")
+                    'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA256
+                    'metaDato.AlgoritmoImpronta = "SHA-256"
+                    metaDato.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByte)
+                    'metaDato.Impronta = BitConverter.ToString(metaDato.ImprontaFile).Replace("-", "")
+                Case Else
+                    Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+            End Select
+            metaDato.AlgoritmoImpronta = EnteConservatoreAttivo.Denominazione.ToUpper
+
+
+            request.metaDatoAtto = metaDato
+            documentoConservato = wsConservazioneSoap.conservaAttoAllegato(request)
+
+            If String.IsNullOrEmpty(documentoConservato.messaggioErrore) Then
+                documentiConservati.Add(documentoConservato.ListaDocumentiBase(0).idDocumento)
+            Else
+                messaggioErrore = documentoConservato.messaggioErrore
+            End If
+
+        Catch ex As Exception
+            messaggioErrore = ex.Message
+        End Try
+
+        Return messaggioErrore
+
+
+    End Function
+
+    'Private Sub ConservaAttoAmministrativo2(ByVal idDocumento As Integer, ByVal nomeFileFirmato As String, ByVal codiceLicenza As String)
+
+    '    Dim listaAttiConservati As New List(Of Integer)
+    '    Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+
+    '    Try
+    '        'OTTENGO L'OGGETTO COMPLETO
+    '        Dim documenti As New ParsecAtt.DocumentoRepository
+    '        Dim documento = documenti.GetFullById(idDocumento)
+
+
+
+    '        If documento Is Nothing Then
+    '            Throw New ApplicationException("Atto amministrativo non trovato!")
+    '        End If
+
+
+    '        Dim idDocumentoConservatoPadre As Integer = 0
+
+
+    '        Try
+
+    '            '**************************************************************************************************************
+    '            'CERCO IL DOCUMENTO DA CONSERVARE
+    '            '**************************************************************************************************************
+    '            Dim nomeFilePrimarioDaConservare As String = nomeFileFirmato ' Me.GetNomeFileFirmato(documento)
+
+    '            'If String.IsNullOrEmpty(nomeFilePrimarioDaConservare) Then
+
+    '            '    ''SE NON TROVO IL DOCUMENTO FIRMATO CERCO IL DOCUMENTO PDF
+    '            '    'Dim pubblicazioni As New ParsecMES.AlboRepository
+    '            '    'Dim pubblicazione As ParsecMES.Pubblicazione = pubblicazioni.GetView(New ParsecMES.FiltroPubblicazione With {.IdDocumento = Me.TaskAttivo.IdDocumento}).FirstOrDefault
+    '            '    'pubblicazione.Documenti = pubblicazioni.GetDocumenti(pubblicazione.Id)
+    '            '    'pubblicazioni.Dispose()
+    '            '    'If Not pubblicazione Is Nothing Then
+
+    '            '    '    Dim localPath As String = ParsecAdmin.WebConfigSettings.GetKey("PathAttiAlbo")
+    '            '    '    Dim anno As String = pubblicazione.DataRegistrazione.Value.Year.ToString
+    '            '    '    Dim documentoPrimario = pubblicazione.Documenti.Where(Function(c) c.IdTipologia = 1).FirstOrDefault
+
+    '            '    '    If Not documentoPrimario Is Nothing Then
+    '            '    '        If String.IsNullOrEmpty(documentoPrimario.Nomefile) Then
+    '            '    '            Throw New Exception(messaggio & vbCrLf & "File '" & nomeFilePrimarioDaConservare.Replace("\", "/") & "' non trovato!")
+    '            '    '        End If
+    '            '    '        nomeFilePrimarioDaConservare = localPath & anno & "\" & documentoPrimario.Nomefile
+    '            '    '    End If
+    '            '    'End If
+
+    '            '    'SE NON TROVO IL DOCUMENTO FIRMATO CONSERVO IL DOCUMENTO ODT
+    '            '    Dim annoEsercizio As Integer = Me.GetAnnoEsercizio(documento)
+    '            '    nomeFilePrimarioDaConservare = String.Format("{0}{1}\{2}", ParsecAdmin.WebConfigSettings.GetKey("PathAtti"), annoEsercizio, documento.Nomefile)
+    '            'End If
+
+    '            If Not IO.File.Exists(nomeFilePrimarioDaConservare) Then
+    '                Throw New Exception("File '" & nomeFilePrimarioDaConservare.Replace("\", "/") & "' non trovato!")
+    '            End If
+    '            '**************************************************************************************************************
+
+    '            Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+    '            Dim soggettoProduttore = utenteCollegato.Cognome & ", " & utenteCollegato.Nome & If(Not String.IsNullOrEmpty(utenteCollegato.CodiceFiscale), ", " & utenteCollegato.CodiceFiscale, "")
+
+
+    '            '**************************************************************************************************************
+    '            '1) CONSERVO IL DOCUMENTO FIRMATO O IL PDF ASSOCIATO ALL'ATTO AMMINISTRATIVO
+    '            '**************************************************************************************************************
+    '            Dim metadatoAttoSoap As New wsConservazione.SoapConservaAttoRequest
+    '            metadatoAttoSoap.codiceLicenza = codiceLicenza
+    '            metadatoAttoSoap.file = IO.File.ReadAllBytes(nomeFilePrimarioDaConservare)
+
+    '            Dim metaDatoAtto As New wsConservazione.MetaDatoAtto
+    '            metaDatoAtto.DataChiusura = Now
+    '            metaDatoAtto.DataDocumento = documento.DataDocumento
+    '            metaDatoAtto.DataProtocollo = documento.DataOraRegistrazione
+    '            metaDatoAtto.DestinatarioDocumento = "INTERNO"
+    '            metaDatoAtto.FileName = IO.Path.GetFileName(nomeFilePrimarioDaConservare)
+    '            metaDatoAtto.IdDocumentoConservatoPadre = Nothing
+    '            metaDatoAtto.idDocumentoSep = documento.Id
+    '            metaDatoAtto.idModuloSep = ParsecAdmin.TipoModulo.ATT
+    '            metaDatoAtto.Informazioni = documento.Oggetto
+    '            metaDatoAtto.NumeroDocumento = documento.ContatoreGenerale
+    '            metaDatoAtto.NumeroProtocollo = If(documento.NumeroProtocollo.HasValue, documento.NumeroProtocollo.Value.ToString, String.Empty)
+    '            metaDatoAtto.Oggetto = documento.Oggetto
+    '            metaDatoAtto.SoggettoProduttoreDocumento = soggettoProduttore
+
+    '            metaDatoAtto.TipoDocumento = documento.ToString.ToUpper
+    '            'metaDatoAtto.TipoDocumento = documento.DescrizioneTipologia
+
+    '            If Not String.IsNullOrEmpty(documento.DescrizioneUfficio) Then
+    '                metaDatoAtto.Ufficio = documento.DescrizioneUfficio
+    '            Else
+    '                metaDatoAtto.Ufficio = documento.DescrizioneSettore
+    '            End If
+
+    '            If documento.TipologiaDocumento = ParsecAtt.TipoDocumento.Delibera Then
+    '                metaDatoAtto.OrganoDeliberanteAtto = documento.DescrizioneTipologiaSeduta
+    '            End If
+
+    '            metadatoAttoSoap.metaDatoAtto = metaDatoAtto
+    '            Dim documentoConservato = wsConservazioneSoap.conservaAttoAllegato(metadatoAttoSoap)
+
+    '            If String.IsNullOrEmpty(documentoConservato.messaggioErrore) Then
+    '                idDocumentoConservatoPadre = documentoConservato.ListaDocumentiBase(0).idDocumento
+    '                listaAttiConservati.Add(idDocumentoConservatoPadre)
+    '                Dim doc = documenti.Where(Function(c) c.Id = documento.Id).FirstOrDefault
+    '                doc.IdDocumentoWS = idDocumentoConservatoPadre
+    '            Else
+    '                Throw New Exception(documentoConservato.messaggioErrore)
+    '            End If
+    '        Catch ex As Exception
+    '            Throw New Exception(ex.Message)
+
+    '        End Try
+
+    '        '**************************************************************************************************************
+
+    '        '**************************************************************************************************************
+    '        '2) CONSERVO GLI ALLEGATI ASSOCIATI ALL'ATTO AMMINISTRATIVO
+    '        '**************************************************************************************************************
+    '        Dim messaggioErrore As String = String.Empty
+
+    '        messaggioErrore = Me.ConservaAllegatiAttoAmministrativo(documento, idDocumentoConservatoPadre, codiceLicenza, listaAttiConservati)
+    '        If Not String.IsNullOrEmpty(messaggioErrore) Then
+
+    '            '**************************************************************************************************************
+    '            'ANNULLO I SALVATAGGI IN CASO DI ERRORE E SOLLEVO L'ECCEZIONE
+    '            '**************************************************************************************************************
+    '            Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+    '            Throw New Exception(messaggioErrore)
+    '        End If
+    '        '****************************************************************************************************************************
+
+
+
+    '        '****************************************************************************************************************************
+    '        '3) CONSERVO I FILE P7M ASSOCIATI ALLE FIRME DELLA PROPOSTA DI DELIBERA O DELLA PROPOSTA DI DETERMINA
+    '        '****************************************************************************************************************************
+
+    '        If documento.TipologiaDocumento = ParsecAtt.TipoDocumento.Delibera Then
+    '            If documento.IdPadre.HasValue Then
+    '                Dim proposta = documenti.GetFullById(documento.IdPadre.Value)
+    '                messaggioErrore = Me.ConservaDocumentiFirmatiProposta(proposta, idDocumentoConservatoPadre, codiceLicenza, listaAttiConservati)
+    '                If Not String.IsNullOrEmpty(messaggioErrore) Then
+    '                    '**************************************************************************************************************
+    '                    'ANNULLO I SALVATAGGI IN CASO DI ERRORE E SOLLEVO L'ECCEZIONE
+    '                    '**************************************************************************************************************
+    '                    Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+    '                    Throw New Exception(messaggioErrore)
+    '                End If
+    '            End If
+    '        End If
+
+
+    '        If documento.TipologiaDocumento = ParsecAtt.TipoDocumento.Determina Then
+    '            If documento.IdPadre.HasValue Then
+
+    '                Dim parametri As New ParsecAdmin.ParametriRepository
+    '                Dim parametro = parametri.GetByName("ConservaDocumentiFirmatiPropostaDetermina")
+    '                parametri.Dispose()
+
+    '                Dim conservaDocumentiFirmatiPropostaDetermina As Boolean = False
+    '                If Not parametro Is Nothing Then
+    '                    conservaDocumentiFirmatiPropostaDetermina = (parametro.Valore = "1")
+    '                End If
+
+    '                If conservaDocumentiFirmatiPropostaDetermina Then
+    '                    Dim proposta = documenti.GetFullById(documento.IdPadre.Value)
+    '                    If Not proposta Is Nothing Then
+    '                        messaggioErrore = ConservaDocumentiFirmatiProposta(proposta, idDocumentoConservatoPadre, codiceLicenza, listaAttiConservati)
+
+    '                        If Not String.IsNullOrEmpty(messaggioErrore) Then
+    '                            '**************************************************************************************************************
+    '                            'ANNULLO I SALVATAGGI IN CASO DI ERRORE E SOLLEVO L'ECCEZIONE
+    '                            '**************************************************************************************************************
+    '                            Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+    '                            Throw New Exception(messaggioErrore)
+    '                        End If
+    '                    End If
+    '                End If
+
+    '            End If
+    '        End If
+
+
+
+    '        '****************************************************************************************************************************
+
+    '        '****************************************************************************************************************************
+    '        '4) CONSERVO IL FILE P7M DELLA RELATA DI PUBBLICAZIONE
+    '        '****************************************************************************************************************************
+    '        messaggioErrore = ConservaRelataPubblicazioneFirmata(documento, idDocumentoConservatoPadre, codiceLicenza, listaAttiConservati)
+    '        If Not String.IsNullOrEmpty(messaggioErrore) Then
+    '            '**************************************************************************************************************
+    '            'ANNULLO I SALVATAGGI IN CASO DI ERRORE E SOLLEVO L'ECCEZIONE
+    '            '**************************************************************************************************************
+    '            Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+    '            Throw New Exception(messaggioErrore)
+    '        End If
+    '        '****************************************************************************************************************************
+
+
+    '        documenti.SaveChanges()
+    '        documenti.Dispose()
+
+    '    Catch ex As Exception
+    '        Me.CancellaDocumentiConservati(codiceLicenza, listaAttiConservati)
+    '        Throw New Exception(ex.Message)
+    '    End Try
+
+
+    'End Sub
+
+#End Region
+
+End Class
