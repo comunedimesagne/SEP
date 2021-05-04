@@ -1,0 +1,65 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{E24C65DC-7377-472B-9ABA-BC803B73C61A}") = "sep", "..\sep\", "{7E5E6003-CB51-449F-9C7A-C1339B47DA64}"
+	ProjectSection(WebsiteProperties) = preProject
+		SccProjectName = ""
+		SccAuxPath = ""
+		SccLocalPath = ""
+		SccProvider = ""
+		Frontpage = "false"
+		TargetFrameworkMoniker = ".NETFramework,Version%3Dv4.0"
+		ProjectReferences = "{301CA16D-3142-4CA2-A2CB-FB0BE40E3364}|ParsecWebServices.dll;{54AE8C7E-D5BA-4B32-88CF-742F4732CC6A}|ParsecAdmin.dll;{681333AD-A948-451F-B57D-B12044EE9678}|ParsecCommon.dll;{BDE75C2D-118E-4963-9389-D35E7868BB80}|ParsecUtility.dll;{EFCC818B-73F4-4B05-8CB4-A051660EFC83}|ParsecAtt.dll;{CAA54AB2-9B30-4E95-8072-D1EF5CBC352F}|ParsecPro.dll;{593659F0-5359-4EDC-B7AF-721AF1C68CF8}|ParsecWKF.dll;{762D2499-95DA-4D45-A47E-1378C53127AC}|ParsecReporting.dll;{B4C29AB5-F6DB-4A60-BAF0-FAC18BF18083}|ParsecMES.dll;{EB1C62FE-7BCF-4569-8DAF-DE4F6D2DAB69}|ParsecPed.dll;{41DB8C46-84A7-418C-B110-D44478354E22}|ParsecSuap.dll;{48505E7A-FCF4-43D1-BFF4-5967A8B77B9F}|ParsecPostgres.dll;{79D8F50A-E96D-4E2C-B863-A3D4D824EAB5}|ParsecPub.dll;"
+		Debug.AspNetCompiler.VirtualPath = "/sep"
+		Debug.AspNetCompiler.PhysicalPath = "..\sep\"
+		Debug.AspNetCompiler.TargetPath = "PrecompiledWeb\sep\"
+		Debug.AspNetCompiler.Updateable = "true"
+		Debug.AspNetCompiler.ForceOverwrite = "true"
+		Debug.AspNetCompiler.FixedNames = "false"
+		Debug.AspNetCompiler.Debug = "True"
+		Release.AspNetCompiler.VirtualPath = "/sep"
+		Release.AspNetCompiler.PhysicalPath = "..\sep\"
+		Release.AspNetCompiler.TargetPath = "PrecompiledWeb\sep\"
+		Release.AspNetCompiler.Updateable = "true"
+		Release.AspNetCompiler.ForceOverwrite = "true"
+		Release.AspNetCompiler.FixedNames = "false"
+		Release.AspNetCompiler.Debug = "False"
+		VWDPort = "58897"
+		VWDDynamicPort = "true"
+		DefaultWebSiteLanguage = "Visual Basic"
+	EndProjectSection
+	ProjectSection(SvnOrigin) = preProject
+		@Keys = Enlist,Svn.Uri
+		Enlist = Required
+		Svn.Uri = ../../sep/trunk/
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|Mixed Platforms = Debug|Mixed Platforms
+		Debug|x86 = Debug|x86
+		Release|Any CPU = Release|Any CPU
+		Release|Mixed Platforms = Release|Mixed Platforms
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7E5E6003-CB51-449F-9C7A-C1339B47DA64}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7E5E6003-CB51-449F-9C7A-C1339B47DA64}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7E5E6003-CB51-449F-9C7A-C1339B47DA64}.Debug|Mixed Platforms.ActiveCfg = Debug|Any CPU
+		{7E5E6003-CB51-449F-9C7A-C1339B47DA64}.Debug|Mixed Platforms.Build.0 = Debug|Any CPU
+		{7E5E6003-CB51-449F-9C7A-C1339B47DA64}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7E5E6003-CB51-449F-9C7A-C1339B47DA64}.Release|Any CPU.ActiveCfg = Debug|Any CPU
+		{7E5E6003-CB51-449F-9C7A-C1339B47DA64}.Release|Any CPU.Build.0 = Debug|Any CPU
+		{7E5E6003-CB51-449F-9C7A-C1339B47DA64}.Release|Mixed Platforms.ActiveCfg = Debug|Any CPU
+		{7E5E6003-CB51-449F-9C7A-C1339B47DA64}.Release|Mixed Platforms.Build.0 = Debug|Any CPU
+		{7E5E6003-CB51-449F-9C7A-C1339B47DA64}.Release|x86.ActiveCfg = Debug|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(SubversionScc) = preSolution
+		Svn-Managed = True
+		Manager = AnkhSVN - Subversion Support for Visual Studio
+	EndGlobalSection
+EndGlobal
