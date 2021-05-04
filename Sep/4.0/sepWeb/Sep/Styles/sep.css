@@ -1,0 +1,136 @@
+.txt-barra-moduli {
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	font-size: 10px;
+	color: #FFFFFF;
+	font-weight: bold;
+
+}
+.txt-Amministrazione {
+
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	font-size: 10px;
+	color: #333300;
+	font-weight: bold;
+}
+.txt-nomeUtente {
+
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	font-size: 10px;
+	color: #FFFFFF;
+	font-weight: normal;
+}
+.txt-nomeModulo {
+
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 16px;
+	color: #FFFFFF;
+	font-weight: bold;
+}
+.txt-nomeProcedura {
+
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 16px;
+	color: #FFFFFF;
+	font-weight: bold;
+}
+.txt-copyright {
+
+
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	font-size: 10px;
+	color: #FFFFFF;
+	font-weight: normal;
+}
+.txt-descrizioneAOO {
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 18px;
+	color: #FFFFFF;
+	font-weight: bold;
+	line-height: 16px;
+}
+.txt-classificazione-componente-proprieta {
+
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 16px;
+	color: #000000;
+	font-weight: bold;
+}
+
+.btn_firma 
+{
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 12px;
+	color:Green;
+	font-weight: bold;
+	width:240px;
+	border-style:solid;
+	height:25px;
+}
+
+
+.btn_cancella
+{
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 12px;
+	color:Red;
+	font-weight: bold;
+	width:240px;
+	border-style:solid;
+	height:25px;
+}
+
+.btn_modifica
+{
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 12px;
+	color:Navy;
+	font-weight: bold;
+	width:240px;
+	border-style:solid;
+	height:25px;
+}
+
+.btn_chiudi
+{	
+	border-style:solid;
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 12px;
+	color:Navy;
+	font-weight: bold;
+	width:90px;	
+	height:25px;	 
+}
+
+.btn_conferma 
+{
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 12px;
+	color:#4588AB;
+	font-weight: bold;
+	width:240px;
+	border-style:solid;
+	height:25px;
+}
+
+
+.btn_nega
+{
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 12px;
+	color:Red;
+	font-weight: bold;
+	width:240px;
+	border-style:solid;
+	height:25px;
+}
+
+.btn_ritorna
+{
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 12px;
+	color:Gray;
+	font-weight: bold;
+	width:240px;
+	border-style:solid;
+	height:25px;
+}

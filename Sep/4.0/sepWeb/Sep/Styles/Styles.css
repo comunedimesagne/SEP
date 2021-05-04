@@ -1,0 +1,238 @@
+/* Foglio di stile CSS predefinito per un nuovo progetto di applicazione Web */
+
+
+.CasellaDiTesto
+{
+	border-right: lightgrey 1px solid;
+	border-top: lightgrey 1px solid;
+	font-size: 10px;
+	border-left: lightgrey 1px solid;
+	color: #4f4f4f;
+	border-bottom: lightgrey 1px solid;
+	font-family: Verdana;
+	height: 18px;
+	background-color: #fafafa;
+}
+
+.CasellaDiTestoN
+{
+	border-right: lightgrey 1px solid;
+	border-top: lightgrey 1px solid;
+	font-size: 10px;
+	border-left: lightgrey 1px solid;
+	border-bottom: lightgrey 1px solid;
+	font-family: Verdana;
+	height: 18px;
+	text-align:right;
+	background-color: #fafafa;
+}
+
+.CasellaTestoOpNa
+{
+	border-right: lightgrey 1px solid;
+	border-top: lightgrey 1px solid;
+	font-size: 10px;
+	border-left: lightgrey 1px solid;
+	border-bottom: lightgrey 1px solid;
+	font-family: Verdana;
+	height: 18px;
+	display : none;
+}
+
+.ReadOnly
+{
+	border-right: lightgrey 1px solid;
+	border-top: lightgrey 1px solid;
+	font-size: 10px;
+	border-left: lightgrey 1px solid;
+	color: dimgray;
+	border-bottom: lightgrey 1px solid;
+	font-family: Verdana;
+	height: 18px;
+}
+.titoloGrid
+{
+	font-weight: bold;
+	font-size: 8pt;
+	text-transform: capitalize;
+	font-family: Verdana;
+	font-variant: normal;
+}
+
+.Etichetta
+{
+	border-right: gray 2px;
+	border-top: gray 2px;
+	font-weight: normal;
+	font-size: 12px;
+	border-left: gray 2px;
+	border-bottom: gray 2px;
+	font-family: Verdana;
+}
+
+.EtichettaLogo
+{
+	border-top-width: 2px;
+	font-weight: bold;
+	border-left-width: 2px;
+	font-size: 9px;
+	border-left-color: gray;
+	border-bottom-width: 2px;
+	border-bottom-color: gray;
+	color: #000099;
+	border-top-color: gray;
+	font-family: Verdana;
+	border-right-width: 2px;
+	border-right-color: gray;
+}
+Etichetta_large
+{
+	border-right: gray 2px;
+	border-top: gray 2px;
+	font-weight: bolder;
+	font-size: 12px;
+	border-left: gray 2px;
+	border-bottom: gray 2px;
+	font-family: Verdana;
+}
+
+.TitoloForm
+{
+	font-size: 11px;
+	color: darkorange;
+	font-variant: small-caps;
+}
+
+.Pulsante
+{
+	font-weight: bold;
+	font-size: 10px;
+	color: #000000;
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+}
+.MultiPage
+{
+	border-left: black 1px solid;
+	border-right: black 1px solid;
+	border-bottom: black 1px solid;
+	background-color: White;
+}
+.Messaggio_errore
+{
+	font-family:Verdana Arial;
+	color: Red;
+	font-weight:bolder;
+	font-size: xx-small;
+	text-align: center;
+}
+.Messaggio
+{
+	font-family:Verdana Arial;
+	color: Blue;
+	font-weight:bolder;
+	font-size: xx-small;
+	text-align: center;
+}
+.Shadow
+{
+	filter: progid:dximagetransform.microsoft.dropshadow(offx=2, offy=2, color= 'gray' , positive= 'true' );
+}
+
+
+.Ceck
+{
+	border-right: gray 2px;
+	border-top: gray 2px;
+	font-weight: bold;
+	font-size: 10px;
+	border-left: gray 2px;
+	border-bottom: gray 2px;
+	font-family: Verdana;
+}
+.EtichettaAlign
+{
+	text-align :center;
+}
+
+
+/* RadScheduler - Change the style of the Today Cell in Month View */
+div.RadScheduler_Office2007#ctl00_MainContent_RadSchedulerPianificazioneTavoli .rsMonthView .rsTodayCell
+{
+    background-color: #C6C6FF;
+    color: #000;
+    border: 1px solid #000;
+}
+/* RadScheduler - Rimpicciolisco il font e le caselle degli appuntamenti*/
+div.RadScheduler_Office2007#ctl00_MainContent_RadSchedulerPianificazioneTavoli .rsDateWrap { height: 110px !important; }
+div.RadScheduler_Office2007#ctl00_MainContent_RadSchedulerPianificazioneTavoli .rsRow .rsFirstWrap { margin-top: -80px !important; }
+div.RadScheduler_Office2007#ctl00_MainContent_RadSchedulerPianificazioneTavoli .rsMonthView .rsApt  
+{  
+    font-size:12px !important;
+    height:16px !important;
+}
+
+/*Utilizzata in VisualizzazioneTavoliPage.aspx per nascondere la griglia delle pratiche*/
+.dlPraticaStile td, table#tabTitoloTavolo td {
+    border-style: none !important;
+}
+td.dlPraticheStile 
+{
+    border-left-style: solid !important;
+}
+div#ctl00_MainContent_rgrdVisTavoli > table.rgMasterTable td
+{
+    padding-bottom: 1px !important;
+    padding-top: 1px !important;
+    padding-left: 1px !important;
+    padding-right: 3px !important;
+}
+table#tabTitoloTavolo
+{
+    background-color:#e5e5e5;
+    font-size:small;
+    width:100%;
+}
+table.dlPraticaStile
+{
+    height:5px;
+}
+div#divSpazio
+{
+    height:20px;
+}
+/*Personalizzazione del Rad Async Upload ----->*/
+div.divModUpload div.RadAsyncUpload input.ruFakeInput
+    {
+        padding: 0;
+        text-align: center;
+        visibility: hidden;
+        vertical-align:middle;
+        width: 0;
+    }
+div.divModUpload div.RadAsyncUpload input.ruBrowse
+    {
+        background-image: url("../images/text.png");
+        cursor: pointer;
+        height: 16px;
+        text-align: center;
+        vertical-align:middle;
+        width: 16px !important;
+    }
+div.divModUpload
+    {
+        cursor: pointer;
+        height: 18px;
+        text-align: center;
+        vertical-align:middle;
+        width: 32px;
+    }
+div.divModUpload *
+    {
+        height: 18px;
+        margin: 0 !important;
+        padding: 0 !important;
+        text-align: center;
+        vertical-align:middle;
+        width: 32px;
+    }
+/*<--------|*/

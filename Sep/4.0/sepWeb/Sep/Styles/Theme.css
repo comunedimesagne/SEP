@@ -1,0 +1,198 @@
+﻿.N_prova2_B
+{
+      background-image: url('../Images/N_prova2_B.png');
+      background-repeat: repeat-x;
+	  width : 28.5%;
+
+}
+  
+.N_prova2_D
+{
+      background-image: url('../Images/N_prova2_B.png');
+      background-repeat: repeat-x;
+	  width : 100%;
+
+}
+            
+.N_prova2_D_OLD
+{
+      background-image: url('../Images/N_prova2_D.png');
+      background-repeat: no-repeat;
+      width:823px;
+
+ 
+}
+
+
+.MenuOff
+{
+      background-image: url('../Images/menu_off.gif');
+      background-color: #C6DDFF;
+      cursor: hand;
+      width:11px;
+      height:53px;
+}
+
+
+
+.MenuOn
+{
+      background-image: url('../Images/menu_on.gif');
+      background-color: #C6DDFF;
+       cursor: hand;
+       width:11px;
+       height:53px;
+}
+
+
+.ContainerWrapperWhite
+{
+	background-color: White;
+	border-right: 1px solid #9ABBE8;
+	border-bottom: 1px solid #9ABBE8;
+	border-left: 1px solid #9ABBE8;
+	width: 100%;
+}
+
+.ContainerWrapper
+{
+	background-color: #DFE8F6;
+	border-right: 1px solid #9ABBE8;
+	border-bottom: 1px solid #9ABBE8;
+	border-left: 1px solid #9ABBE8;
+	width: 100%;
+}
+
+
+
+*
+{
+	margin: 0px;
+	padding: 0px;
+	font-family: inherit;
+	font-style: inherit;
+	font-size: 100%;
+}
+
+.Container
+{
+	border: 1px solid #99BBE8;
+	background-color: White;
+}
+
+.ContainerHeader
+{
+	background-image: url(../Images/Container_Header.gif);
+	height: 23px;
+	font-size: 12px;
+	font-weight: bold;
+	color: #133047;
+}
+
+.ContainerMargin
+{
+	padding: 4px;
+}
+
+.ContainerHeader td
+{
+	padding: 4px;
+}
+
+.ContainerHeader2
+{
+	background-image: url(../Images/Container_Header2.gif);
+	height: 30px;
+	font-size: 12px;
+	font-weight: bold;
+	color: #133047;
+}
+
+.ContainerHeader2 td
+{
+	padding: 4px;
+}
+
+.GridFooter
+{
+	background-image: url(../Images/Grid_Footer.gif);
+	height: 25px;
+}
+
+.GridFooter td
+{
+	padding: 0px 3px 0px 3px;
+}
+
+
+#notification
+{
+    position:absolute;
+	bottom:0%;
+	right:0%;
+	height:175px;
+	width:200px;
+
+}
+
+#notificationClose
+{
+ cursor: hand;  
+}
+
+#notificationIn{
+
+}
+
+
+
+
+
+
+.info, .success, .warning, .error, .validation {
+border: 1px solid;
+margin: 10px 0px;
+padding:15px 10px 15px 50px;
+background-repeat: no-repeat;
+background-position: 10px center;
+}
+.info {
+color: #00529B;
+background-color: #BDE5F8;
+background-image: url('info.png');
+}
+.success {
+color: #4F8A10;
+background-color: #DFF2BF;
+background-image: url(../Images/success.png);
+}
+.warning {
+color: #9F6000;
+background-color: #FEEFB3;
+background-image: url('warning.png');
+}
+.error {
+color: #D8000C;
+background-color: #FFBABA;
+background-image: url('error.png');
+}
+
+
+
+  html body .RadInput .riTextBox,
+        html body .RadInputMgr 
+        {
+            border-width:1px;
+            border-style:solid;
+            padding:1px 1px 1px !important;
+            overflow-x : hidden !important;
+        }
+        
+        
+        
+
+
+
+
+
+
