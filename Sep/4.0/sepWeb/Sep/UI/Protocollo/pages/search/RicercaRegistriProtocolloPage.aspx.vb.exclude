@@ -1,0 +1,107 @@
+﻿Imports ParsecAdmin
+Imports Telerik.Web.UI
+Imports System.Web.Services
+
+
+Partial Class RicercaFascicoloPage
+    Inherits System.Web.UI.Page
+
+
+#Region "PROPRIETA'"
+
+    'Public Property Fascicolo() As ParsecAdmin.Fascicolo
+    '    Get
+    '        Return CType(Session("RicercaFascicoloPage_Fascicolo"), ParsecAdmin.Fascicolo)
+    '    End Get
+    '    Set(ByVal value As ParsecAdmin.Fascicolo)
+    '        Session("RicercaFascicoloPage_Fascicolo") = value
+    '    End Set
+    'End Property
+
+    'Public Property Fascicoli() As Object
+    '    Get
+    '        Return CType(Session("RicercaFascicoloPage_Fascicoli"), Object)
+    '    End Get
+    '    Set(ByVal value As Object)
+    '        Session("RicercaFascicoloPage_Fascicoli") = value
+    '    End Set
+    'End Property
+
+    Public Property Filtro() As ParsecAdmin.FascicoloFiltro
+        Get
+            Return CType(Session("RicercaFascicoloPage_Filtro"), ParsecAdmin.FascicoloFiltro)
+        End Get
+        Set(ByVal value As ParsecAdmin.FascicoloFiltro)
+            Session("RicercaFascicoloPage_Filtro") = value
+        End Set
+    End Property
+
+#End Region
+
+#Region "EVENTI PAGINA"
+
+    Protected Sub Page_Init(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Init
+
+        'If Not Me.Page.IsPostBack Then
+        '    Me.Fascicoli = Nothing
+        'End If
+
+        ParsecUtility.Utility.CloseWindow(False)
+
+    End Sub
+
+#End Region
+
+
+#Region "METODI PRIVATI"
+
+    Private Sub ResettaFiltro()
+        Me.txtDataRegistroIniziale.SelectedDate = Nothing
+        Me.txtDataRegistroFinale.SelectedDate = Nothing
+        'Me.Fascicoli = Nothing
+    End Sub
+
+    Private Function GetFiltro() As ParsecPro.RegistroProtocolloFiltro
+        Dim filtro As New ParsecPro.RegistroProtocolloFiltro
+
+        filtro.DataInizio = Me.txtDataRegistroIniziale.SelectedDate
+        filtro.DataFine = Me.txtDataRegistroFinale.SelectedDate
+
+        Return filtro
+
+    End Function
+
+#End Region
+
+#Region "EVENTI CONTROLLI - RICERCA"
+
+    Protected Sub CercaButton_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles CercaButton.Click
+        Dim message As New StringBuilder
+        If Me.ConvalidaParametri(message) Then
+            ParsecUtility.SessionManager.FiltroRegistroProtocollo = Me.GetFiltro
+            ParsecUtility.Utility.DoWindowClose(False)
+        Else
+            ParsecUtility.Utility.MessageBox(message.ToString, False)
+        End If
+
+    End Sub
+
+    Private Function ConvalidaParametri(ByVal message As StringBuilder) As Boolean
+
+        'If Not String.IsNullOrEmpty(Trim(Me.NumeroRepertorioInizioTextBox.Text)) Then
+        '    If ParsecUtility.Utility.CheckNumber(Me.NumeroRepertorioInizioTextBox.Text) Then
+        '        message.AppendLine("Se specificato, il campo 'Numero Repertorio da' deve essere un numero!")
+        '    End If
+        'End If
+
+        Return Not message.Length > 0
+    End Function
+
+    Protected Sub AnnullaButton_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles AnnullaButton.Click
+        Me.ResettaFiltro()
+    End Sub
+
+#End Region
+
+
+End Class

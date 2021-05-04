@@ -1,0 +1,489 @@
+﻿<%@ Page Language="VB" MasterPageFile="~/MainPage.master" AutoEventWireup="false"
+    CodeFile="GestioneConservazioneProtocolloPage.aspx.vb" Inherits="GestioneConservazioneProtocolloPage" %>
+    
+<%@ Register Assembly="Telerik.Web.UI" Namespace="Telerik.Web.UI" TagPrefix="telerik" %>
+
+<%--SPDX-License-Identifier: GPL-3.0-only--%>
+
+<asp:Content ID="Content1" ContentPlaceHolderID="MainContent" runat="Server">
+    <script type="text/javascript">
+
+        var _backgroundElement = document.createElement("div");
+        var overlay = document.createElement("div");
+
+//        var hide = true;
+
+
+        function pageLoad() {
+            var manager = Sys.WebForms.PageRequestManager.getInstance();
+            manager.add_beginRequest(OnBeginRequest);
+            manager.add_endRequest(OnEndRequest);
+            $get("pageContent").appendChild(_backgroundElement);
+            $get("pageContent").appendChild(overlay);
+
+//            if (hide) {
+//                HidePanel();
+//            } else {
+//                ShowPanel();
+//            }
+
+        }
+        function OnBeginRequest(sender, args) {
+            EnableUI(false);
+        }
+
+
+
+        function OnEndRequest(sender, args) {
+            count = 2;
+            var message = $get('<%= infoOperazioneHidden.ClientId %>').value;
+
+            if (message !== '') {
+
+                //VISUALIZZO IL MESSAGGIO
+
+                ShowMessageBox(message);
+
+                var intervallo = setInterval(function () {
+                    count = count - 1;
+                    if (count <= 0) {
+                        HideMessageBox();
+                        EnableUI(true);
+                        clearInterval(intervallo);
+
+                    }
+                }, 1000);
+
+                $get('<%= infoOperazioneHidden.ClientId %>').value = '';
+
+            } else { EnableUI(true); }
+        }
+
+
+        function ShowMessageBox(message) {
+
+            overlay.style.display = '';
+            overlay.style.position = 'absolute';
+            overlay.style.left = '0px';
+            overlay.style.top = '0px';
+            overlay.style.width = '100%';
+            overlay.style.height = '100%';
+            overlay.style.zIndex = 10000;
+            overlay.style.backgroundColor = '#09718F';
+            overlay.style.filter = "alpha(opacity=20)";
+            overlay.style.opacity = "0.2";
+
+            var messageBoxPanel = document.getElementById("messageBoxPanel");
+
+
+            with (messageBoxPanel) {
+                style.display = '';
+            }
+
+            var messageBox = document.getElementById("messageBox");
+
+            with (messageBox) {
+                style.width = '300px';
+                style.height = '40px';
+                style.backgroundColor = '#BFDBFF';
+                style.border = 'solid #4892FF 2px';
+                innerHTML = message;
+                style.color = '#00156E';
+                style.backgroundImage = 'url(/sep/Images/success.png)';
+                style.backgroundPosition = '10px center';
+                style.backgroundRepeat = 'no-repeat';
+                style.padding = '15px 10px 15px 50px';
+                style.margin = '15px 0px';
+
+            }
+
+
+
+        }
+
+
+        function HideMessageBox() {
+            try {
+                var messageBoxPanel = document.getElementById("messageBoxPanel");
+                messageBoxPanel.style.display = 'none';
+                overlay.style.display = 'none';
+            }
+            catch (e) { }
+        }
+
+
+         
+        function EnableUI(state) {
+            if (!state) {
+                _backgroundElement.style.display = '';
+                _backgroundElement.style.position = 'absolute';
+                _backgroundElement.style.left = '0px';
+                _backgroundElement.style.top = '0px';
+
+                _backgroundElement.style.width = '100%';
+                _backgroundElement.style.height = '100%';
+
+                _backgroundElement.style.zIndex = 10000;
+                // _backgroundElement.className = "modalBackground";
+                _backgroundElement.style.backgroundColor = '#09718F';
+                _backgroundElement.style.filter = "alpha(opacity=20)";
+                _backgroundElement.style.opacity = "0.2";
+            }
+            else {
+                _backgroundElement.style.display = 'none';
+
+            }
+        }
+
+
+        function updating(sender, args) {
+            var d = $get("progressBar");
+            d.style.display = '';
+            if (args.get_progressData() && args.get_progressData().OperationComplete == 'true') {
+                args.set_cancel(true);
+                d.style.display = 'none';
+            }
+        }
+
+
+    </script>
+    <asp:UpdateProgress runat="server" ID="UpdateProgress1" DisplayAfter="0">
+        <ProgressTemplate>
+            <div id="loadingOuter" style="position: absolute; width: 100%; text-align: center;
+                top: 300px; z-index: 2000000">
+                <table cellpadding="4" style="background-color: #4892FF; margin: 0 auto">
+                    <tr>
+                        <td>
+                            <div id="loadingInner" style="width: 300px; text-align: center; background-color: #BFDBFF;
+                                height: 60px">
+                                <span style="color: #00156E">Attendere prego ... </span>
+                                <br />
+                                <br />
+                                <img alt="" src="../../../../images/loading.gif" border="0">
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <div id="progressBar" style="position: absolute; width: 100%; text-align: center;
+                top: 300px; z-index: 2000000">
+                <div id="Div3" style="width: 310px; text-align: center; background-color: #BFDBFF;
+                    margin: 0 auto">
+                    <telerik:RadProgressArea OnClientProgressUpdating="updating" Skin="Office2007" ID="RadProgressArea1"
+                        runat="server" ProgressIndicators="RequestSize,TotalProgressPercent,TotalProgressBar"
+                        HeaderText="Esportazione in corso ...">
+                        <Localization Total="Totale:" Uploaded="Completato:" />
+                    </telerik:RadProgressArea>
+                </div>
+            </div>
+        </ProgressTemplate>
+    </asp:UpdateProgress>
+    <asp:UpdatePanel ID="Pannello" runat="server">
+        <ContentTemplate>
+            <div id="pageContent">
+                <telerik:RadFormDecorator ID="RadFormDecorator1" DecoratedControls="all" runat="server"
+                    DecorationZoneID="ZoneID1" Skin="Web20"></telerik:RadFormDecorator>
+                <telerik:RadFormDecorator ID="RadFormDecorator2" DecoratedControls="all" runat="server"
+                    DecorationZoneID="ZoneID2" Skin="Web20"></telerik:RadFormDecorator>
+                <center>
+                    <telerik:RadProgressManager ID="Radprogressmanager1" runat="server" Skin="Office2007" />
+                    <table width="100%" cellpadding="5" cellspacing="5" border="0">
+                        <tr>
+                            <td>
+                                <table class="ContainerWrapper" border="0" cellpadding="2" cellspacing="0" width="100%">
+                                    <tr>
+                                        <td>
+                                            <table cellpadding="0" cellspacing="0" style="width: 100%">
+                                                <tr>
+                                                    <td style="background-color: #BFDBFF; padding: 4px; border-bottom: 1px solid  #9ABBE8;
+                                                        border-top: 1px solid  #9ABBE8; height: 25px">
+                                                        &nbsp;<asp:Label ID="TitoloLabel" runat="server" Style="color: #00156E" Font-Bold="True" Text="Filtro Registrazione Protocollo" />
+                                                    </td>
+                                                    <td align="center" style="width: 30px; background-color: #BFDBFF; border-bottom: 1px solid  #9ABBE8;
+                                                        border-top: 1px solid  #9ABBE8;">
+                                                        <asp:ImageButton ID="FiltraImageButton" runat="server" ImageUrl="~/images//search.png"
+                                                            ToolTip="Effettua la ricerca con i filtri impostati" Style="border: 0" ImageAlign="AbsMiddle" />
+                                                    </td>
+                                                    <td align="center" style="width: 30px; background-color: #BFDBFF; border-bottom: 1px solid  #9ABBE8;
+                                                        border-top: 1px solid  #9ABBE8;">
+                                                        <asp:ImageButton ID="AnnullaFiltroImageButton" Style="border: 0" runat="server" ImageUrl="~/images//cancelSearch.png"
+                                                            ToolTip="Annulla i filtri impostati" ImageAlign="AbsMiddle" />
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ContainerMargin">
+                                            <table class="Container" cellpadding="0" cellspacing="4" width="100%" border="0">
+                                                <tr>
+                                                    <td align="left" style="height: 50px">
+                                                        <table>
+                                                            <tr>
+                                                                <td style="width: 130px;text-align :left">
+                                                                    <asp:Label ID="DataInvioInizioLabel" runat="server" CssClass="Etichetta" Text="Data Protocollo da" />
+                                                                </td>
+                                                                <td style="width: 125px; text-align : left">
+                                                                    <telerik:RadDatePicker ID="DataInvioInizioTextBox" Skin="Office2007" Width="110px" runat="server" MinDate="1753-01-01" ToolTip="Data inizio protocollo">
+                                                                        <Calendar runat="server">
+                                                                            <SpecialDays>
+                                                                                <telerik:RadCalendarDay Repeatable="Today" Date="" ItemStyle-CssClass="rcToday" />
+                                                                            </SpecialDays>
+                                                                        </Calendar>
+                                                                        <DatePopupButton ToolTip="Apri il calendario." />
+                                                                    </telerik:RadDatePicker>
+                                                                </td>
+                                                                <td style="width: 20px">
+                                                                    <asp:Label ID="DataInvioFineLabel" runat="server" CssClass="Etichetta" Text="a"  />
+                                                                </td>
+                                                                <td style="width: 125px">
+                                                                    <telerik:RadDatePicker ID="DataInvioFineTextBox" Skin="Office2007" Width="110px"
+                                                                        runat="server" MinDate="1753-01-01" ToolTip="Data fine protocollo">
+                                                                        <Calendar runat="server">
+                                                                            <SpecialDays>
+                                                                                <telerik:RadCalendarDay Repeatable="Today" Date="" ItemStyle-CssClass="rcToday" />
+                                                                            </SpecialDays>
+                                                                        </Calendar>
+                                                                        <DatePopupButton ToolTip="Apri il calendario." />
+                                                                    </telerik:RadDatePicker>
+                                                                </td>
+
+                                                                <td>
+                                                                    <asp:Label ID="daInviarelabel" runat="server" CssClass="Etichetta"
+                                                                        Font-Bold="True" ForeColor="#FF9900" Text="Stato Conservazione" Width="150px" />
+                                                                </td>
+
+                                                                <td>
+                                                                    <asp:CheckBox ID="chkDaInviare" runat="server" Checked="True" CssClass="etichetta" AutoPostBack ="true"
+                                                                        Text="Da inviare" ToolTip="Se selezionato permette di visualizzare solo le Registrazioni di Protocollo da inviare al Modulo Archivio."
+                                                                        Width="100px" />
+                                                                </td>
+
+                                                                <td>
+                                                                    <asp:CheckBox ID="chkInviate" runat="server" Checked="True" CssClass="etichetta"
+                                                                        Text="Inviati" ToolTip="Se selezionato permette di visualizzare solo le Registrazioni di Protocollo inviate al Modulo Archivio e non impacchettate."
+                                                                        Width="85px" />
+                                                                </td>
+
+                                                                <td>
+                                                                    <asp:CheckBox ID="chkArchiviate" runat="server" Checked="True" CssClass="etichetta"
+                                                                        Text="Archiviati" ToolTip="Se selezionato permette di visualizzare solo le Registrazioni di Protocollo inviate al Modulo Archivio e impacchettate."
+                                                                        Width="100px" />
+                                                                </td>
+
+                                                                <%--<td>
+                                                                    <asp:CheckBox ID="chkNonConservabili" runat="server" Checked="True" CssClass="etichetta"
+                                                                        Text="Non Conservabili" ToolTip="Se selezionato permette di visualizzare anche le Registrazioni non Conservabili"
+                                                                        Width="130px" />
+                                                                </td>--%>
+                                                                <asp:Panel ID="PannelloVisibilita" runat ="server" Visible ="TRUE">
+                                                                    <td style="width: 230px">
+                                                                        <asp:Label ID="Label2" runat="server" CssClass="Etichetta" Text="Mostra Solo Registrazioni Nascoste" ForeColor="#FF9900" />
+                                                                    </td>
+
+                                                                    <td style="width: 110px">
+                                                                            <telerik:RadComboBox ID="cmbConservabilita" runat="server" AutoPostBack ="false" 
+                                                                            EmptyMessage="-" Filter="StartsWith" ItemsPerRequest="2" 
+                                                                            MaxHeight="50px" Skin="Office2007" Width="80px" />  
+                                                                    </td>  
+                                                                </asp:Panel> 
+
+                                                            </tr>
+                                                        </table>
+                                                    </td>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <table style="width: 100%; background-color: #BFDBFF; border: 1px solid #5D8CC9">
+                                                <tr>
+                                                    <td>
+                                                        <table style="width: 100%; background-color: #BFDBFF">
+                                                            <tr>
+                                                                <td>
+                                                                    &nbsp;<asp:Label ID="TitoloElencoLabel" runat="server" Font-Bold="True" Style="width: 500px;
+                                                                        color: #00156E; background-color: #BFDBFF" Text="Elenco Registrazioni di Protocollo" />
+                                                                </td>
+
+                                                                <td align="center" style="width: 125; border-left: 0 solid #5D8CC9;">
+                                                                    <telerik:RadButton ID="NoPaging" runat="server" Text="Non Paginare" Skin="Office2007"
+                                                                        ImageAlign="AbsMiddle" Width="115px" ToolTip="Disattiva/Attiva Paginazione">
+                                                                        <Icon PrimaryIconUrl="~/images/Next.png" PrimaryIconLeft="5px" />
+                                                                    </telerik:RadButton>
+                                                                </td>
+
+                                                                <td align="center" style="width: 40px">
+                                                                    <asp:ImageButton ID="EsportaInExcelImageButton" Style="border: 0" runat="server"
+                                                                        ImageUrl="~/images//excel32.png" ToolTip="Esporta i Protocolli visualizzati in un file formato excel"
+                                                                        ImageAlign="AbsMiddle" />
+                                                                </td>
+
+                                                                <td align="center" style="width: 40px">
+                                                                    <asp:ImageButton ID="ConservaProtocolliImageButton" Style="border: 0" runat="server"
+                                                                        ImageUrl="~/images//Export32.png" ToolTip="Invia al modulo Archivio i Protocolli selezionati."
+                                                                        ImageAlign="AbsMiddle" />
+                                                                </td>
+                                                            </tr>
+                                                        </table>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>
+                                                        <div style="overflow: auto; height: 615px; width: 100%; background-color: #FFFFFF; border: 1px solid #5D8CC9;">
+                                                            <telerik:RadGrid ID="ProtocolliGridView" runat="server" AllowPaging="True"
+                                                                AutoGenerateColumns="False" AllowFilteringByColumn="True" CellSpacing="0" GridLines="None"
+                                                                Skin="Office2007" Width="99.8%" AllowSorting="True" Culture="it-IT" PageSize="18"
+                                                                AllowMultiRowSelection="True">
+                                                                <MasterTableView DataKeyNames="Id" TableLayout ="Fixed">
+                                                                    <Columns>
+
+                                                                        <telerik:GridBoundColumn DataField="Id" DataType="System.Int32" FilterControlAltText="Filter Id column" HeaderText="Id" ReadOnly="True" SortExpression="Id" UniqueName="Id" Visible="False" />
+                                                                        
+                                                                        <telerik:GridTemplateColumn ItemStyle-Width="40px" HeaderStyle-Width="40px" UniqueName="CheckBoxTemplateColumn" HeaderTooltip="Seleziona tutte le Registrazioni" AllowFiltering="False">
+                                                                            <HeaderTemplate>
+                                                                                <asp:CheckBox ID="SelectAllCheckBox" OnCheckedChanged="ToggleSelectedState" AutoPostBack="True" runat="server" />
+                                                                            </HeaderTemplate>
+                                                                            <ItemTemplate>
+                                                                                <asp:CheckBox ID="SelectCheckBox" OnCheckedChanged="ToggleRowSelection" AutoPostBack="True"
+                                                                                    runat="server" ToolTip="Seleziona Mail da Archiviare" />
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+
+                                                                         <telerik:GridButtonColumn ItemStyle-Width="40px" HeaderStyle-Width="40px" ButtonType="ImageButton" CommandName="StatoProtocollo" ImageUrl="~\images\knob-search16.png" UniqueName="StatoProtocollo" HeaderTooltip="Stato Protocollo.">
+                                                                        </telerik:GridButtonColumn>
+                                                    
+                                                                        <telerik:GridTemplateColumn SortExpression="NumeroProtocollo" UniqueName="NumeroProtocollo" CurrentFilterFunction="EqualTo" ShowFilterIcon ="false" AutoPostBackOnFilter="true"
+                                                                            HeaderText="N." DataField="NumeroProtocollo" HeaderStyle-Width="100px" ItemStyle-Width="100px">
+                                                                            <ItemTemplate>
+                                                                                <div title='<%#  Eval("NumeroProtocollo","{0:0000000}") %>' 
+                                                                                style="white-space: nowrap;overflow: hidden; text-overflow: ellipsis; width: 100px; border: 0px solid red">
+                                                                                    <%# Eval("NumeroProtocollo", "{0:0000000}")%></div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+
+                                                                        <telerik:GridTemplateColumn SortExpression="DescrizioneTipologiaRegistristrazione" CurrentFilterFunction="EqualTo" ShowFilterIcon ="false" AutoPostBackOnFilter="true"
+                                                                            UniqueName="DescrizioneTipologiaRegistristrazione" HeaderText="Tipo" DataField="DescrizioneTipologiaRegistristrazione"
+                                                                            HeaderStyle-Width="100px" ItemStyle-Width="100px">
+                                                                            <ItemTemplate>
+                                                                                <div title='<%# Eval("DescrizioneTipologiaRegistristrazione") %>' style="white-space: nowrap;
+                                                                                    overflow: hidden; text-overflow: ellipsis; width: 100px;border: 0px solid red">
+                                                                                    <%# Eval("DescrizioneTipologiaRegistristrazione")%></div>
+                                                                            </ItemTemplate>
+
+                                                                        </telerik:GridTemplateColumn>
+
+                                                                        <telerik:GridTemplateColumn SortExpression="DataImmissione" UniqueName="DataImmissione"  CurrentFilterFunction="EqualTo" ShowFilterIcon ="false" AutoPostBackOnFilter="true"
+                                                                            HeaderText="Data" DataField="DataImmissione" HeaderStyle-Width="100px" ItemStyle-Width="100px">
+                                                                            <ItemTemplate>
+                                                                                <div title='<%# Eval("DataImmissione","{0:dd/MM/yyyy}")%>' style="white-space: nowrap;
+                                                                                    overflow: hidden; text-overflow: ellipsis; width: 100px;border: 0px solid red">
+                                                                                    <%# Eval("DataImmissione", "{0:dd/MM/yyyy}")%></div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+
+                                                                        <telerik:GridTemplateColumn SortExpression="Oggetto" UniqueName="Oggetto" HeaderText="Oggetto"  CurrentFilterFunction="Contains" ShowFilterIcon ="false" AutoPostBackOnFilter="true" FilterControlWidth="100%"
+                                                                            DataField="Oggetto">
+                                                                            <ItemTemplate>
+                                                                                <div id="Oggetto"  runat="server"  title='<%# Eval("Oggetto")%>' style="white-space: nowrap; overflow: hidden;
+                                                                                    text-overflow: ellipsis; width: 100%;border: 0px solid red">
+                                                                                    <%# Eval("Oggetto")%></div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+
+                                                                        <telerik:GridTemplateColumn SortExpression="ElencoReferentiEsterni" UniqueName="ElencoReferentiEsterni" CurrentFilterFunction="Contains" ShowFilterIcon ="false" AutoPostBackOnFilter="true" FilterControlWidth="100%"
+                                                                            HeaderText="Mittente/Destinatario" DataField="ElencoReferentiEsterni" HeaderStyle-Width="250px"
+                                                                            ItemStyle-Width="250px">
+                                                                            <ItemTemplate>
+                                                                                <div  title='<%# Replace(Eval("ElencoReferentiEsterni"), "'", "&#039;")%>' style="white-space: nowrap; overflow: hidden;
+                                                                                    text-overflow: ellipsis; width: 250px;border: 0px solid red">
+                                                                                    <%# Eval("ElencoReferentiEsterni")%></div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+
+                                                                        <telerik:GridTemplateColumn SortExpression="ElencoReferentiInterni" UniqueName="ElencoReferentiInterni" CurrentFilterFunction="Contains" ShowFilterIcon ="false" AutoPostBackOnFilter="true"  FilterControlWidth="100%"
+                                                                            HeaderText="Ufficio" DataField="ElencoReferentiInterni" HeaderStyle-Width="180px"
+                                                                            ItemStyle-Width="180px">
+                                                                            <ItemTemplate>
+                                                                                <div  title='<%# Replace(Eval("ElencoReferentiInterni"), "'", "&#039;")%>' style="white-space: nowrap; overflow: hidden;
+                                                                                    text-overflow: ellipsis; width: 180px;border: 0px solid red">
+                                                                                    <%# Eval("ElencoReferentiInterni")%></div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+                                                                        
+
+                                                                        <telerik:GridButtonColumn ButtonType="ImageButton"  CommandName="Preview" FilterControlAltText="Filter Preview column" ImageUrl="~\images\knob-search16.png" UniqueName="Preview" HeaderStyle-Width="30px" ItemStyle-Width="30px" />
+
+                                                                        <telerik:GridButtonColumn ItemStyle-Width="30px" HeaderStyle-Width="30px" ButtonType="ImageButton"
+                                                                            CommandName="SbloccoProtocollo" FilterControlAltText="Filter SbloccoProtocollo column" ImageUrl="~/images/Unlock_16.png"
+                                                                            UniqueName="SbloccoProtocollo" Text="Sblocco Protocollo" HeaderTooltip="Sblocco Protocollo">
+                                                                        </telerik:GridButtonColumn>
+
+                                                                        <telerik:GridButtonColumn ButtonType="ImageButton" CommandName="RipristinaProtocollo" ImageUrl="~\images\knob-search16.png" UniqueName="RipristinaProtocollo" HeaderTooltip="Ripristino Protocollo">
+                                                                            <HeaderStyle Width="30px" />
+                                                                        </telerik:GridButtonColumn>
+
+                                                                    </Columns>
+                                                                </MasterTableView>
+                                                            </telerik:RadGrid>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td align="center" style="background-color: #BFDBFF; padding: 4px; border-bottom: 0px solid  #9ABBE8; border-top: 1px solid  #9ABBE8; height: 25px">
+                            </td>
+                        </tr>
+                    </table>
+
+                    <table style="width: 100%; border: 1px solid #9ABBE8; text-align: center">
+                        <tr>
+                            <td>
+                                <table>
+                                    <tr>
+                                        <td style="width: 80px">
+                                            <asp:Label ID="LegendaLabel" runat="server" CssClass="Etichetta" Text="Legenda :"
+                                                Font-Bold="True" ForeColor="#FF9900" />
+                                        </td>
+                                        <td>
+                                            <img alt="" src="../../../../Images/pBlue16.png" style="vertical-align: middle" />
+                                            <asp:Label ID="LegendaDaInviare" runat="server" CssClass="Etichetta" Style="text-align: center"
+                                                Text="Da inviare al Modulo Archivio" Width="200px" />
+                                        </td>
+                                        <td>
+                                            <img alt="" src="../../../../Images/pVerde16.png" style="vertical-align: middle" />
+                                            <asp:Label ID="LegendaInviataNonImpacchettata" runat="server" CssClass="Etichetta" Style="text-align: center"
+                                                Text="Inviata al Modulo Archivio e non impacchettata" Width="320px" />
+                                        </td>
+                                        <td>
+                                            <img alt="" src="../../../../Images/pRosso16.png" style="vertical-align: middle" />
+                                            <asp:Label ID="LegendaInviataImpacchettata" runat="server" CssClass="Etichetta" Style="text-align: center"
+                                                Text="Inviata al Modulo Archivio e impacchettata" Width="290px" />
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+
+
+                <div id="messageBoxPanel" style="position: absolute; width: 100%; text-align: center;
+                    z-index: 2000000; display: none; top: 300px">
+                    <div id="messageBox" style="width: 300px; height: 40; text-align: center; background-color: #BFDBFF;
+                        margin: 0 auto;">
+                    </div>
+                </div>
+
+                </center>
+
+
+                <asp:HiddenField ID="infoOperazioneHidden" runat="server" />
+                <asp:ImageButton ID="AggiornaProtocolloButton" runat="server" ImageUrl="~/images//knob-search16.png" Style="display: none" />
+            </div>
+        </ContentTemplate>
+    </asp:UpdatePanel>
+</asp:Content>

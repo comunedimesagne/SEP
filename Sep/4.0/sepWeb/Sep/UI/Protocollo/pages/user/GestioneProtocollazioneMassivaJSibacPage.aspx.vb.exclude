@@ -1,0 +1,1009 @@
+﻿Imports System.Data.SqlClient
+Imports System.Data
+Imports Telerik.Web.UI
+Imports System.Net
+Imports System.IO
+Imports System.Text.RegularExpressions
+Imports System.Security.Cryptography
+Imports Rebex.Net
+
+'* SPDX-License-Identifier: GPL-3.0-only
+
+Partial Class GestioneProtocollazioneMassivaJSibacPage
+    Inherits System.Web.UI.Page
+
+
+    Private WithEvents MainPage As MainPage
+
+    'Classe di appoggio contenente le imformazioni sul protocollo
+    Public Class InfoProtocollo
+        Public Property Comune As String = String.Empty
+        Public Property Email As String = String.Empty
+        Public Property CodiceIstat As String = String.Empty
+        Public Property Allegati As New List(Of InfoFile)
+
+        Public Property ErroreCaricamento As String = String.Empty
+
+        Public Property Valido As Boolean = True
+
+        Public Property ErroreElaborazione As String = String.Empty
+        Public Property IdProtocollo As Nullable(Of Integer) = Nothing
+        Public Property Processata As Boolean = False
+    End Class
+
+    Public Class InfoFile
+        Public Property Nomefile As String = String.Empty
+        Public Property Oggetto As String = String.Empty
+        Public Property Contenuto As Byte() = Nothing
+        Public Property Primario As Integer = 0
+
+    End Class
+
+    Public Class CsvReader
+        Inherits List(Of String())
+
+        Public Sub New(ByVal csv As String, ByVal separator As String)
+            For Each line As String In Regex.Split(csv, System.Environment.NewLine).ToList().Where(Function(s) Not String.IsNullOrEmpty(s))
+                Dim values As String() = Regex.Split(line, separator)
+                For i As Integer = 0 To values.Length - 1
+                    values(i) = values(i).Trim(""""c)
+                Next
+                Me.Add(values)
+            Next
+
+        End Sub
+    End Class
+
+
+#Region "PROPRIETA'"
+
+
+    Public Property InfoProtocolli() As List(Of InfoProtocollo)
+        Get
+            Return CType(Session("GestioneProtocollazioneMassivaJSibacPage_Info"), List(Of InfoProtocollo))
+        End Get
+        Set(ByVal value As List(Of InfoProtocollo))
+            Session("GestioneProtocollazioneMassivaJSibacPage_Info") = value
+        End Set
+    End Property
+
+
+#End Region
+
+#Region "EVENTI PAGINA"
+
+    Protected Sub Page_Init(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Init
+
+        'DownloadFtpDirectory("ftp://192.168.10.135/sepWeb/sep/Elettorale/", "appsep1", "p8w4u7y2", "")
+        Me.MainPage = CType(Me.Master, MainPage)
+        Me.MainPage.NomeModulo = "Protocollo"
+        Me.MainPage.DescrizioneProcedura = "> Protocollazione Partenza Modello 3d Elettronico JSibac"
+
+        Dim css As HtmlGenericControl
+        css = New HtmlGenericControl
+        css.TagName = "style"
+        css.Attributes.Add("type", "text/css")
+        css.InnerHtml = "div.RadUploadProgressArea_Office2007 .ruProgress { background-image: none;}" & vbCrLf
+        css.InnerHtml += ".RadUploadProgressArea { width: 320px !important;}" & vbCrLf
+        css.InnerHtml += "div.RadUploadProgressArea li.ruProgressHeader{ margin: 10px 18px 0px; }" & vbCrLf
+
+
+        Me.Page.Header.Controls.Add(css)
+
+        If Not Me.Page.IsPostBack Then
+            Me.CaricaCaselle()
+            Me.InfoProtocolli = New List(Of InfoProtocollo)
+
+            Me.SettoreTextBox.Text = String.Empty
+            Me.OggettoTextBox.Text = "Revisione dinamica elettorale invio 3d elettronico"
+            Me.OggettoEmailTextBox.Text = "Revisione dinamica elettorale invio 3d elettronico"
+            Me.CorpoTextBox.Text = "Si trasmette il modello 3d elettronico in formato .xml relativo ad elettore/i cancellato/i da questo comune per trasferimento di residenza in codesto comune."
+        End If
+
+        Me.ChiudiEditPanelButton.Attributes.Add("onclick", "HideEditEmailPanel();hideEditPanel = true; return false;")
+        Me.ConfermaEditPanelButton.Attributes.Add("onclick", "HideEditEmailPanel();hideEditPanel = true;")
+    End Sub
+
+    Protected Sub Page_LoadComplete(sender As Object, e As System.EventArgs) Handles Me.LoadComplete
+        Dim nonProtocollabili = Me.InfoProtocolli.Where(Function(c) c.Valido = False)
+        If nonProtocollabili.Count > 0 Then
+            Me.ProtocolliLabel.Text = "Protocolli Partenza&nbsp;&nbsp;&nbsp;" & If(Me.InfoProtocolli.Count > 0, "( " & Me.InfoProtocolli.Count.ToString & " )" & "<span style='color:red'>&nbsp;&nbsp&nbsp;&nbspdi cui " & nonProtocollabili.Count.ToString & " non protocollabili</span>", "")
+        Else
+            Me.ProtocolliLabel.Text = "Protocolli Partenza&nbsp;&nbsp;&nbsp;" & If(Me.InfoProtocolli.Count > 0, "( " & Me.InfoProtocolli.Count.ToString & " )", "")
+        End If
+
+    End Sub
+
+    Protected Sub Page_PreRender(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.PreRender
+        ParsecUtility.Utility.SaveScrollPosition(Me.scrollPanelProtocolli, Me.scrollPosHiddenProtocolli, False)
+
+    End Sub
+
+
+#End Region
+
+#Region "EVENTI CONTROLLI"
+
+    Protected Sub ConfermaEditPanelButton_Click(sender As Object, e As System.EventArgs) Handles ConfermaEditPanelButton.Click
+        If Not String.IsNullOrEmpty(Me.CodiceIstatHiddenField.Value) Then
+            Dim codice As String = Me.CodiceIstatHiddenField.Value
+            Dim info = Me.InfoProtocolli.Where(Function(c) c.CodiceIstat = codice).FirstOrDefault
+            If Not info Is Nothing Then
+                info.Email = Me.ModificaEmailTextBox.Text.Trim
+                If String.IsNullOrEmpty(info.Email) Then
+                    info.Email = "&nbsp;"
+                    info.Valido = False
+                    info.ErroreCaricamento = "Email Assente"
+                Else
+                    If Me.CheckEmail(info.Email) Then
+                        info.Valido = True
+                        info.ErroreCaricamento = String.Empty
+                    Else
+                        info.Valido = False
+                        info.ErroreCaricamento = "Email Invalida"
+                    End If
+
+                End If
+            End If
+            Me.ModificaEmailTextBox.Text = String.Empty
+            Me.CodiceIstatHiddenField.Value = String.Empty
+            Me.ProtocolliGridView.Rebind()
+        End If
+    End Sub
+
+    Protected Sub TrovaSettoreImageButton_Click(sender As Object, e As System.Web.UI.ImageClickEventArgs) Handles TrovaSettoreImageButton.Click
+        Me.TrovaReferenteInterno()
+    End Sub
+
+    Protected Sub AggiornaSettoreImageButton_Click(sender As Object, e As System.Web.UI.ImageClickEventArgs) Handles AggiornaSettoreImageButton.Click
+        Me.AggiornaSettore()
+    End Sub
+
+    Protected Sub EliminaSettoreImageButton_Click(sender As Object, e As System.Web.UI.ImageClickEventArgs) Handles EliminaSettoreImageButton.Click
+        Me.SettoreTextBox.Text = String.Empty
+        Me.IdSettoreTextBox.Text = String.Empty
+    End Sub
+
+
+
+    Protected Sub ProtocollaButton_Click(sender As Object, e As System.EventArgs) Handles ProtocollaButton.Click
+
+        Dim infoProtocolliElaborati = Me.InfoProtocolli.Where(Function(c) c.IdProtocollo.HasValue And c.Valido = True).ToList
+
+        If infoProtocolliElaborati.Count > 0 Then
+            ParsecUtility.Utility.MessageBox("Elaborazione già eseguita!", False)
+            Exit Sub
+        End If
+
+        Dim infoProtocolli = Me.InfoProtocolli.Where(Function(c) c.Valido = True).ToList
+
+        If infoProtocolli.Count = 0 Then
+            ParsecUtility.Utility.MessageBox("E' necessario caricare i protocolli!", False)
+            Exit Sub
+        Else
+            Dim res = Me.ConvalidaDati
+            If Not String.IsNullOrEmpty(res) Then
+                ParsecUtility.Utility.MessageBox(res, False)
+                Exit Sub
+            End If
+        End If
+
+        Dim sb As New StringBuilder
+        Dim msg As String = String.Empty
+        Dim i As Integer = 0
+        Dim percentCompleted As Integer = 0
+        Dim count = infoProtocolli.Count
+        Dim context = RadProgressContext.Current
+        context.PrimaryTotal = count.ToString
+
+        Dim idCasella As Integer = CInt(Me.CaselleEmailComboBox.SelectedValue)
+        Dim n = 0
+
+        For Each infoProtocollo In infoProtocolli
+
+            i += 1
+            context.PrimaryValue = i.ToString
+            percentCompleted = CInt((0.5F + ((100.0F * i) / count)))
+            context.PrimaryPercent = percentCompleted.ToString
+
+            If Not Response.IsClientConnected Then
+                Exit For
+            End If
+            Try
+                infoProtocollo.Processata = True
+
+                Dim reg = Me.Protocolla(infoProtocollo)
+                infoProtocollo.IdProtocollo = reg.Id
+
+                Try
+                    'If i = 3 Then
+                    '    Dim d = 2 \ n
+                    'End If
+                    Me.InviaEmail(idCasella, infoProtocollo.Email, reg)
+                Catch ex As Exception
+                    If ex.InnerException Is Nothing Then
+                        Throw New ApplicationException("Impossibile inviare l'email per il seguente motivo:" & vbCrLf & ex.Message)
+                    Else
+                        Throw New ApplicationException("Impossibile inviare l'email per il seguente motivo:" & vbCrLf & ex.InnerException.Message)
+                    End If
+
+                End Try
+
+            Catch ex As Exception
+                If sb.Length = 0 Then
+                    sb.AppendLine("Riscontrati errori durante l'elaborazione!" & vbCrLf & "Posizionare il puntatore del mouse sull'icona rossa " & vbCrLf & "con un punto esclamativo per visualizzare la descrizione dell'errore")
+                End If
+                If ex.InnerException Is Nothing Then
+                    infoProtocollo.ErroreElaborazione = ex.Message
+                Else
+                    infoProtocollo.ErroreElaborazione = ex.InnerException.Message
+                End If
+
+            End Try
+
+
+        Next
+
+        context.OperationComplete = True
+
+
+
+        If sb.Length = 0 Then
+            Me.infoOperazioneHidden.Value = "Elaborazione conclusa con successo!"
+        Else
+            ParsecUtility.Utility.MessageBox(sb.ToString, False)
+        End If
+
+        Me.ProtocolliGridView.Rebind()
+
+
+        Me.SvuotaCartellaElettorale()
+
+    End Sub
+
+
+    Protected Sub CaricaButton_Click(sender As Object, e As System.EventArgs) Handles CaricaButton.Click
+        Me.CaricaInformazioni()
+    End Sub
+
+
+#End Region
+
+#Region "METODI PRIVATI"
+
+
+    Private Function CheckEmail(ByVal Indirizzo As String) As Boolean
+        Dim emailRegex As New Regex("\w+([-+.]\w+)*@\w+([-.]\w+)*\.\w+([-.]\w+)*", RegexOptions.IgnoreCase)
+        Dim m = emailRegex.Match(Indirizzo)
+        Return m.Success
+    End Function
+
+    Private Function ConfigureSmtp(ByVal casellaPec As ParsecAdmin.ParametriPec) As Rebex.Net.Smtp
+        Dim client As Rebex.Net.Smtp = Nothing
+        Try
+            If Not casellaPec Is Nothing Then
+                client = New Rebex.Net.Smtp
+                client.Settings.SslAcceptAllCertificates = True
+                client.Settings.SslAllowedSuites = client.Settings.SslAllowedSuites And TlsCipherSuite.DH_anon_EXPORT_WITH_RC4_40_MD5 Or TlsCipherSuite.DH_anon_WITH_RC4_128_MD5 Or TlsCipherSuite.DHE_DSS_EXPORT1024_WITH_RC4_56_SHA Or TlsCipherSuite.DHE_DSS_WITH_RC4_128_SHA Or TlsCipherSuite.RSA_EXPORT1024_WITH_RC4_56_SHA Or TlsCipherSuite.RSA_EXPORT_WITH_RC4_40_MD5 Or TlsCipherSuite.RSA_WITH_RC4_128_SHA Or TlsCipherSuite.RSA_WITH_RC4_128_MD5 Or TlsCipherSuite.RSA_WITH_3DES_EDE_CBC_SHA Or TlsCipherSuite.RSA_WITH_AES_128_CBC_SHA
+                Dim mode As Rebex.Net.SslMode = SslMode.None
+                Select Case casellaPec.SmtpPorta.Value
+                    Case 465
+                        mode = SslMode.Implicit
+                    Case 25, 587
+                        If casellaPec.SmtpIsSSL Then
+                            mode = SslMode.Explicit
+                        End If
+                End Select
+                Dim password As String = ParsecCommon.CryptoUtil.Decrypt(casellaPec.Password)
+                client.Connect(casellaPec.SmtpServer, casellaPec.SmtpPorta.Value, mode)
+                client.Login(casellaPec.UserId, password)
+            End If
+        Catch ex As Exception
+            Throw New ApplicationException(ex.Message)
+        End Try
+        Return client
+    End Function
+
+    Private Sub InviaEmail(ByVal idCasella As Integer, ByVal emailDestinatario As String, ByVal registrazione As ParsecPro.Registrazione)
+
+        Dim percorsoRoot As String = ParsecAdmin.WebConfigSettings.GetKey("PathDocumenti")
+        percorsoRoot = percorsoRoot.Remove(percorsoRoot.Length - 1, 1)
+
+        Dim caselle As New ParsecAdmin.ParametriPecRepository
+        Dim casellaPec = caselle.Where(Function(c) c.Id = idCasella).FirstOrDefault
+        caselle.Dispose()
+
+        Dim client As Rebex.Net.Smtp = Nothing
+        Dim mail As New Rebex.Mail.MailMessage
+        If Not casellaPec Is Nothing Then
+            Try
+                client = Me.ConfigureSmtp(casellaPec)
+            Catch ex As Exception
+                Throw New ApplicationException(ex.Message)
+            End Try
+
+            mail.From.Add(casellaPec.Email)
+            mail.To.Add(emailDestinatario)
+
+            Dim subject As String = Me.OggettoEmailTextBox.Text.Trim
+
+            'SOSTITUISCO TUTTO TRANNE I CARATTERI SPECIFICATI DAL RANGE 
+            subject = System.Text.RegularExpressions.Regex.Replace(subject, "[^\u0020-\u00FF]", " ")
+
+            Dim riferimentoProtocollo As String = String.Empty
+            riferimentoProtocollo = "Prot. N. " & registrazione.NumeroProtocollo.Value.ToString & " del " & registrazione.DataImmissione.Value.ToShortDateString & " - "
+            mail.Subject = riferimentoProtocollo & subject
+            mail.BodyText = Me.CorpoTextBox.Text.Trim
+
+            Dim fullPath As String = String.Empty
+            Dim mailAttach As Rebex.Mail.Attachment = Nothing
+            For Each all In registrazione.Allegati
+                fullPath = percorsoRoot & all.PercorsoRelativo & all.Id.ToString.PadLeft(9, "0") & "_" & "1".PadLeft(4, "0") & "_" & all.NomeFile
+                mailAttach = New Rebex.Mail.Attachment(fullPath)
+                mailAttach.FileName = all.NomeFile
+                mail.Attachments.Add(mailAttach)
+            Next
+
+            '***********************************************************************************************
+
+            '***********************************************************************************************
+            'INVIO L'EMAIL
+            '***********************************************************************************************
+            Try
+                client.Timeout = 0
+                client.Send(mail)
+                client.Disconnect()
+            Catch ex As Exception
+                Throw New ApplicationException("Impossibile inviare l'email per il seguente motivo:" & vbCrLf & ex.Message)
+            End Try
+            '***********************************************************************************************
+
+
+            '***********************************************************************************************
+            'SALVO L'EMAIL SU DISCO
+            '***********************************************************************************************
+            Dim percorsoRelativo As String = String.Format("\{0}\", Now.Year)
+            Dim nomeEmail As String = Guid.NewGuid.ToString & ".eml"
+            Dim mailBoxPath As String = ParsecAdmin.WebConfigSettings.GetKey("PostaInviata") & percorsoRelativo & nomeEmail
+            If Not IO.Directory.Exists(ParsecAdmin.WebConfigSettings.GetKey("PostaInviata")) Then
+                IO.Directory.CreateDirectory(ParsecAdmin.WebConfigSettings.GetKey("PostaInviata"))
+            End If
+            If Not IO.Directory.Exists(ParsecAdmin.WebConfigSettings.GetKey("PostaInviata") & percorsoRelativo) Then
+                IO.Directory.CreateDirectory(ParsecAdmin.WebConfigSettings.GetKey("PostaInviata") & percorsoRelativo)
+            End If
+
+            mail.Save(mailBoxPath, Rebex.Mail.MailFormat.Mime)
+            '***********************************************************************************************
+
+            '***********************************************************************************************
+            'INSERISCO L'EMAIL NEL DB
+            '***********************************************************************************************
+            Dim emailsInviate As New ParsecPro.EmailRepository
+            Dim emailInviata As ParsecPro.Email = emailsInviate.CreateFromInstance(Nothing)
+            Dim utente As ParsecAdmin.Utente = ParsecUtility.Applicazione.UtenteCorrente
+            emailInviata.IdCasella = idCasella
+            emailInviata.Inviata = True
+            emailInviata.IdUtente = utente.Id
+            emailInviata.DataInvio = Now
+            emailInviata.Corpo = mail.BodyText
+            emailInviata.Oggetto = mail.Subject
+            emailInviata.Destinatari = emailDestinatario
+            emailInviata.PercorsoRelativo = percorsoRelativo
+            emailInviata.NomeFileEml = nomeEmail
+            emailInviata.NumeroProtocollo = registrazione.NumeroProtocollo.Value
+            emailInviata.AnnoProtocollo = registrazione.DataImmissione.Value.Year
+            emailInviata.MessaggioId = mail.MessageId.Id
+            emailInviata.TipoProtocollo = registrazione.TipoRegistrazione
+
+            emailsInviate.Save(emailInviata)
+            emailsInviate.Dispose()
+            '***********************************************************************************************
+        Else
+            Throw New ApplicationException("La casella PEC con id: " & idCasella.ToString & " non esiste!")
+        End If
+
+
+
+    End Sub
+
+    Private Function Protocolla(ByVal infoProtocollo As InfoProtocollo) As ParsecPro.Registrazione
+        Dim rubrica As New ParsecAdmin.RubricaRepository
+        Dim pathRoot As String = ParsecAdmin.WebConfigSettings.GetKey("PathDocumenti")
+
+        Dim pathElettorale As String = ParsecAdmin.WebConfigSettings.GetKey("PathElettorale")
+
+        Dim utenteCorrente As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+        Dim registrazioni As New ParsecPro.RegistrazioniRepository
+        Dim dataOdierna = Now
+
+        Dim registrazione As New ParsecPro.Registrazione
+        registrazione.DataOraRegistrazione = dataOdierna
+        registrazione.IdUtente = utenteCorrente.Id
+        registrazione.UtenteUsername = utenteCorrente.Username
+        registrazione.DataImmissione = dataOdierna
+        registrazione.Riservato = False
+        registrazione.Modificato = False
+        registrazione.Annullato = False
+        registrazione.PresentiModifiche = False
+        registrazione.DataOraAnnullamento = Nothing
+        registrazione.IdUtenteAnnullamento = Nothing
+        registrazione.UtenteUsernameAnnullamento = Nothing
+
+        registrazione.TipoRegistrazione = 1  'PARTENZA
+
+        registrazione.DataOraRicezioneInvio = Nothing
+        registrazione.IdTipoDocumento = Nothing
+        registrazione.IdTipoRicezione = Nothing
+        registrazione.ProtocolloMittente = String.Empty
+
+
+        registrazione.IdClassificazione = Nothing
+        registrazione.NumeroProtocolloRiscontro = Nothing
+        registrazione.DataImmissioneRiscontro = Nothing
+        registrazione.IdSessioneEmergenza = Nothing
+        registrazione.NumeroEmergenza = Nothing
+        registrazione.IdUtenteEmergenza = Nothing
+        registrazione.UtenteEmergenzaUsername = Nothing
+        registrazione.Note = String.Empty
+        registrazione.NoteInterne = String.Empty
+        registrazione.Spid = Nothing
+        registrazione.AnticipatoViaFax = False
+        registrazione.TipologiaAllegatoPrimario = ParsecPro.TipologiaAllegatoPrimario.Generico
+
+        registrazione.DataDocumento = dataOdierna
+        registrazione.DataProtocollo = dataOdierna
+
+
+        registrazione.Oggetto = Me.OggettoTextBox.Text
+
+        Dim tipiRicezioneInvio As New ParsecPro.TipiRicezioneInvioRepository
+        Dim tipoInvio = tipiRicezioneInvio.Where(Function(c) c.Descrizione.ToLower = "pec" And c.LogStato = Nothing).FirstOrDefault
+        If Not tipoInvio Is Nothing Then
+            registrazione.IdTipoRicezione = tipoInvio.Id
+        End If
+        Dim tipiDocumento As New ParsecPro.TipiDocumentoRepository
+        Dim tipoDocumento = tipiDocumento.Where(Function(c) c.Descrizione.ToLower = "elettronico").FirstOrDefault
+        If Not tipoDocumento Is Nothing Then
+            registrazione.IdTipoDocumento = tipoDocumento.Id
+        End If
+        tipiDocumento.Dispose()
+
+
+        '***********************************************************************************************************************************
+        'CARICO LA VISIBILITA
+        '***********************************************************************************************************************************
+        If utenteCorrente.CodiceStutturaDefault.HasValue Then
+            Dim strutture As New ParsecAdmin.StructureRepository
+            Dim struttura = strutture.GetQuery.Where(Function(c) c.Codice = utenteCorrente.CodiceStutturaDefault And c.LogStato Is Nothing).FirstOrDefault
+            If Not struttura Is Nothing Then
+                Dim gruppoDefault = Me.AggiungiGruppoDefault(struttura.Id, utenteCorrente.Id)
+                If Not gruppoDefault Is Nothing Then
+                    registrazione.Visibilita.Add(gruppoDefault)
+                End If
+            End If
+        End If
+        '***********************************************************************************************************************************
+
+        '***********************************************************************************************************************************
+        'AGGIUNGO VISIBILTA' UTENTE CORRENTE
+        '***********************************************************************************************************************************
+        Dim utenteVisibilita As New ParsecAdmin.VisibilitaDocumento
+        utenteVisibilita.IdEntita = utenteCorrente.Id
+        utenteVisibilita.TipoEntita = ParsecAdmin.TipoEntita.Utente
+        utenteVisibilita.IdModulo = ParsecAdmin.TipoModulo.PRO
+        utenteVisibilita.Descrizione = (If(utenteCorrente.Username = Nothing, "", utenteCorrente.Username) + " - " + If(utenteCorrente.Cognome = Nothing, "", utenteCorrente.Cognome) + " " + If(utenteCorrente.Nome = Nothing, "", utenteCorrente.Nome))
+        utenteVisibilita.LogIdUtente = utenteCorrente.Id
+        utenteVisibilita.LogDataOperazione = Now
+        utenteVisibilita.AbilitaCancellaEntita = False
+        Dim esiste As Boolean = Not registrazione.Visibilita.Where(Function(c) c.IdEntita = utenteVisibilita.IdEntita And c.TipoEntita = utenteVisibilita.TipoEntita).FirstOrDefault Is Nothing
+        If Not esiste Then
+            registrazione.Visibilita.Add(utenteVisibilita)
+        End If
+        '***********************************************************************************************************************************
+
+        '***********************************************************************************************************************************
+        'AGGIUNGO GLI ALLEGATI
+        '***********************************************************************************************************************************
+        Dim allegato As ParsecPro.Allegato = Nothing
+        Dim primario As Boolean = False
+
+        Dim allegati = infoProtocollo.Allegati.OrderByDescending(Function(c) c.Primario).ThenBy(Function(c) c.Nomefile).ToList
+
+        For Each infoFile In allegati
+            allegato = New ParsecPro.Allegato
+            allegato.NomeFile = IO.Path.GetFileName(infoFile.Nomefile)
+            allegato.Oggetto = infoFile.Oggetto
+            allegato.PercorsoRootTemp = pathElettorale
+            allegato.NomeFileTemp = allegato.NomeFile
+            allegato.IdTipologiaDocumento = infoFile.Primario
+            allegato.PercorsoRoot = pathRoot
+            allegato.Impronta = Me.CalcolaHash(infoFile.Contenuto)
+            registrazione.Allegati.Add(allegato)
+        Next
+        '***********************************************************************************************************************************
+
+        registrazione.NumeroAllegati = registrazione.Allegati.Count
+
+        '***********************************************************************************************************************************
+        'AGGIUNGO IL DESTINATARIO ESTERNO
+        '***********************************************************************************************************************************
+        Dim destinatarioEsterno As ParsecPro.Destinatario = Nothing
+        Dim denominazione = infoProtocollo.Comune
+
+        Dim email = infoProtocollo.Email
+
+        'Dim strutturaEsterna = rubrica.Where(Function(c) c.Denominazione = denominazione And c.LogStato Is Nothing).FirstOrDefault
+
+        'CERCO L'ULTIMO
+        Dim strutturaEsterna = rubrica.Where(Function(c) c.Email = email And c.LogStato Is Nothing).OrderByDescending(Function(c) c.Id).FirstOrDefault
+
+        'SE IL DESTINATARIO ESTERNO E' GIA'N PRESENTE IN RUBRICA
+        If Not strutturaEsterna Is Nothing Then
+            destinatarioEsterno = New ParsecPro.Destinatario(strutturaEsterna.Id, False)
+        Else
+            destinatarioEsterno = New ParsecPro.Destinatario
+            destinatarioEsterno.Email = infoProtocollo.Email.Trim
+            destinatarioEsterno.Cognome = denominazione
+            destinatarioEsterno.Interno = False
+            destinatarioEsterno.Rubrica = False
+        End If
+        registrazione.Destinatari.Add(destinatarioEsterno)
+        '***********************************************************************************************************************************
+
+        '***********************************************************************************************************************************
+        'AGGIUNGO IL MITTENTE INTERNO
+        '***********************************************************************************************************************************
+        Dim mittenteInterno As New ParsecPro.Mittente(CInt(Me.IdSettoreTextBox.Text), True)
+        registrazione.Mittenti.Add(mittenteInterno)
+        '***********************************************************************************************************************************
+
+        registrazioni.Save(registrazione)
+
+        registrazione = registrazioni.GetById(registrazioni.Registrazione.Id)
+
+
+        registrazioni.Dispose()
+        rubrica.Dispose()
+
+        Return registrazione
+
+
+    End Function
+
+    Private Sub SvuotaCartellaElettorale()
+        Dim pathElettorale As String = ParsecAdmin.WebConfigSettings.GetKey("PathElettorale")
+        Dim filePaths = IO.Directory.GetFiles(pathElettorale, "*", SearchOption.TopDirectoryOnly).ToList
+        For Each f In filePaths
+            Try
+                IO.File.Delete(f)
+            Catch ex As Exception
+            End Try
+        Next
+    End Sub
+
+    Private Sub CaricaInformazioni()
+        Try
+
+            SvuotaCartellaElettorale()
+
+            Dim pathElettorale As String = ParsecAdmin.WebConfigSettings.GetKey("PathElettorale")
+            Dim elettoraleFtpUrlCsv As String = ParsecAdmin.WebConfigSettings.GetKey("ElettoraleFtpUrlCsv")
+            Dim elettoraleFtpUser As String = ParsecAdmin.WebConfigSettings.GetKey("ElettoraleFtpUser")
+
+            Dim elettoraleFtpPwd As String = ParsecAdmin.WebConfigSettings.GetKey("ElettoraleFtpPwd")
+
+            elettoraleFtpPwd = ParsecCommon.CryptoUtil.Decrypt(elettoraleFtpPwd)
+
+            Dim elettoraleFtpUrlDocumenti As String = ParsecAdmin.WebConfigSettings.GetKey("ElettoraleFtpUrlDocumenti")
+
+
+            If Not Directory.Exists(pathElettorale) Then
+                IO.Directory.CreateDirectory(pathElettorale)
+            End If
+
+            Me.DownloadFtpFile(elettoraleFtpUrlCsv & "ExportPEC.csv", elettoraleFtpUser, elettoraleFtpPwd, pathElettorale & "ExportPEC.csv")
+
+
+            Dim folderDocumenti As String = String.Empty
+            Dim verbale As String = String.Empty
+
+            Dim csv As String = IO.File.ReadAllText(pathElettorale & "ExportPEC.csv")
+
+            Dim helper As New CsvReader(csv, ";")
+            Dim infoProtocolli As New List(Of InfoProtocollo)
+            Dim i As Integer = 0
+
+            For Each line In helper
+                If i = 1 Then
+                    folderDocumenti = line(3).Trim
+                    verbale = "Verbale n. " & line(4).Trim & " del " & line(5).Trim
+                    Exit For
+                End If
+                i += 1
+            Next
+
+
+            If Not String.IsNullOrEmpty(folderDocumenti) Then
+                Me.DownloadFtpDirectory(elettoraleFtpUrlDocumenti & folderDocumenti & "/", elettoraleFtpUser, elettoraleFtpPwd, pathElettorale)
+            End If
+
+
+            For Each line In helper
+
+                Dim comune = line(1)
+                Dim pos = comune.IndexOf("(")
+
+                If pos <> -1 Then
+
+                    Dim info As New InfoProtocollo
+                    comune = comune.Substring(0, pos).Trim
+                    info.Comune = comune
+                    info.Email = line(2).Trim
+
+                    info.Valido = True
+                    If String.IsNullOrEmpty(info.Email) Then
+                        info.Email = "&nbsp;"
+                        info.ErroreCaricamento = "Email Assente" & vbCrLf
+                        info.Valido = False
+                    Else
+                        If Not Me.CheckEmail(info.Email) Then
+                            info.Email = "&nbsp;"
+                            info.ErroreCaricamento = "Email Invalida" & vbCrLf
+                            info.Valido = False
+                        End If
+                    End If
+
+                    If String.IsNullOrEmpty(info.Comune) Then
+                        info.Comune = "&nbsp;"
+                        info.ErroreCaricamento &= "Comune Assente" & vbCrLf
+                        info.Valido = False
+                    End If
+
+                    If Not String.IsNullOrEmpty(line(0).Trim) Then
+                        info.CodiceIstat = line(0).Trim.PadLeft(6, "0"c)
+                    End If
+
+
+                    If String.IsNullOrEmpty(info.CodiceIstat) Then
+                        info.ErroreCaricamento &= "Istat Assente" & vbCrLf
+                        info.Valido = False
+                    Else
+                        Dim filePaths = IO.Directory.GetFiles(pathElettorale, info.CodiceIstat & "*", SearchOption.TopDirectoryOnly).ToList
+
+                        For Each f In filePaths
+                            If IO.Path.GetExtension(f).ToLower = ".pdf" Then
+                                info.Allegati.Add(New InfoFile With {.Nomefile = f, .Oggetto = "Lettera Trasmissione", .Primario = 1, .Contenuto = IO.File.ReadAllBytes(f)})
+                            Else
+                                info.Allegati.Add(New InfoFile With {.Nomefile = f, .Oggetto = "Modello 3d Elettronico", .Primario = 0, .Contenuto = IO.File.ReadAllBytes(f)})
+                            End If
+                        Next
+                    End If
+
+                    Dim modelli3d = info.Allegati.Where(Function(c) IO.Path.GetExtension(c.Nomefile).ToLower = ".xml")
+                    If modelli3d.Count = 0 Then
+                        info.ErroreCaricamento &= "Modello 3d Elettronico Assente" & vbCrLf
+                        info.Valido = False
+                    End If
+
+                    infoProtocolli.Add(info)
+
+                End If
+
+
+            Next
+
+
+
+            Me.InfoProtocolli = infoProtocolli
+            Me.ProtocolliGridView.Rebind()
+
+            Me.TitoloLabel.Text = "Protocollazione Massiva - " & verbale
+
+        Catch ex As Exception
+            If ex.InnerException Is Nothing Then
+                ParsecUtility.Utility.MessageBox(ex.Message, False)
+            Else
+                ParsecUtility.Utility.MessageBox(ex.InnerException.Message, False)
+            End If
+
+        End Try
+    End Sub
+
+    Private Function CalcolaHash(ByVal value As Byte()) As Byte()
+        Dim passwordCifrata() As Byte
+        passwordCifrata = (New SHA1Managed).ComputeHash(value)
+        Return passwordCifrata
+    End Function
+
+    Private Function AggiungiGruppoDefault(ByVal idStruttura As Integer, ByVal idUtente As Integer) As ParsecAdmin.VisibilitaDocumento
+        Dim gruppoDefaut As ParsecAdmin.VisibilitaDocumento = Nothing
+        Dim strutture As New ParsecAdmin.StructureRepository
+        Dim startDate As Date = New Date(Now.Year, Now.Month, Now.Day, 0, 0, 0)
+        Dim endDate As Date = New Date(Now.Year, Now.Month, Now.Day, 23, 59, 59)
+
+        Dim gruppi As New ParsecAdmin.GruppoRepository(strutture.Context)
+        Dim gruppo = (From s In strutture.GetQuery
+                Join g In gruppi.GetQuery
+                On s.IdGruppo Equals g.Id
+                Where g.Abilitato = True And s.Id = idStruttura And g.DataInizioValidita <= startDate And (g.DataFineValidita >= Now Or Not g.DataFineValidita.HasValue)
+                Select g).FirstOrDefault
+
+      
+        If Not gruppo Is Nothing Then
+            gruppoDefaut = New ParsecAdmin.VisibilitaDocumento
+            gruppoDefaut.AbilitaCancellaEntita = False
+            gruppoDefaut.Descrizione = gruppo.Descrizione
+            gruppoDefaut.TipoEntita = 1
+            gruppoDefaut.IdEntita = gruppo.Id
+            gruppoDefaut.IdModulo = 2
+            gruppoDefaut.LogIdUtente = idUtente
+            gruppoDefaut.LogDataOperazione = Now
+
+        End If
+
+        Return gruppoDefaut
+    End Function
+
+    Private Function ConvalidaDati() As String
+        Dim messaggio As New StringBuilder
+
+        If String.IsNullOrEmpty(Me.SettoreTextBox.Text) Then
+            messaggio.AppendLine("E' necessario specificare il mittente del protocollo!")
+        End If
+
+        If String.IsNullOrEmpty(Me.OggettoTextBox.Text) Then
+            messaggio.AppendLine("E' necessario specificare l'oggetto del protocollo!")
+        End If
+
+        If Me.CaselleEmailComboBox.SelectedIndex = 0 Then
+            messaggio.AppendLine("E' necessario selezionare una casella email!")
+        End If
+
+        If String.IsNullOrEmpty(Me.OggettoEmailTextBox.Text) Then
+            messaggio.AppendLine("E' necessario specificare l'oggetto dell'email!")
+        End If
+
+        If String.IsNullOrEmpty(Me.CorpoTextBox.Text) Then
+            messaggio.AppendLine("E' necessario specificare il corpo dell'email!")
+        End If
+
+        Return messaggio.ToString
+    End Function
+
+  
+    Private Sub DownloadFtpDirectory(ByVal url As String, ByVal userName As String, ByVal password As String, ByVal localPath As String)
+        Dim listRequest As FtpWebRequest = DirectCast(WebRequest.Create(url), FtpWebRequest)
+        listRequest.UsePassive = True
+        listRequest.Method = WebRequestMethods.Ftp.ListDirectoryDetails
+        listRequest.Credentials = New NetworkCredential(userName, password)
+
+        Dim lines As New List(Of String)()
+
+        Using listResponse As FtpWebResponse = DirectCast(listRequest.GetResponse(), FtpWebResponse)
+            Using listStream As Stream = listResponse.GetResponseStream()
+                Using listReader As New StreamReader(listStream)
+                    While Not listReader.EndOfStream
+                        lines.Add(listReader.ReadLine())
+                    End While
+                End Using
+            End Using
+        End Using
+
+        Dim parseFormats As String() = New String() {"(?<dir>[\-d])(?<permission>([\-r][\-w][\-xs]){3})\s+\d+\s+\w+\s+\w+\s+(?<size>\d+)\s+(?<timestamp>\w+\s+\d+\s+\d{4})\s+(?<name>.+)", "(?<dir>[\-d])(?<permission>([\-r][\-w][\-xs]){3})\s+\d+\s+\d+\s+(?<size>\d+)\s+(?<timestamp>\w+\s+\d+\s+\d{4})\s+(?<name>.+)", "(?<dir>[\-d])(?<permission>([\-r][\-w][\-xs]){3})\s+\d+\s+\d+\s+(?<size>\d+)\s+(?<timestamp>\w+\s+\d+\s+\d{1,2}:\d{2})\s+(?<name>.+)", "(?<dir>[\-d])(?<permission>([\-r][\-w][\-xs]){3})\s+\d+\s+\w+\s+\w+\s+(?<size>\d+)\s+(?<timestamp>\w+\s+\d+\s+\d{1,2}:\d{2})\s+(?<name>.+)", "(?<dir>[\-d])(?<permission>([\-r][\-w][\-xs]){3})(\s+)(?<size>(\d+))(\s+)(?<ctbit>(\w+\s\w+))(\s+)(?<size2>(\d+))\s+(?<timestamp>\w+\s+\d+\s+\d{2}:\d{2})\s+(?<name>.+)", "(?<timestamp>\d{2}\-\d{2}\-\d{2}\s+\d{2}:\d{2}[Aa|Pp][mM])\s+(?<dir>\<\w+\>){0,1}(?<size>\d+){0,1}\s+(?<name>.+)"}
+
+        For Each line As String In lines
+
+            Dim m As Match = Me.GetMatchingRegex(parseFormats, line)
+
+            If m Is Nothing Then
+                Throw New ApplicationException("Impossibile analizzare l'elenco dettagliato dei file restituito dal server FTP :" & vbCrLf & line)
+            Else
+                Dim filename = m.Groups("name").Value
+                Dim dir As String = m.Groups("dir").Value
+                If dir <> "" AndAlso dir <> "-" Then
+                    'E' una directory
+                Else
+                    'E' un file
+                    Dim name = m.Groups("name").Value
+                    Dim localFilePath As String = Path.Combine(localPath, name)
+                    Dim fileUrl As String = url & name
+                    Me.DownloadFtpFile(fileUrl, userName, password, localFilePath)
+                End If
+
+            End If
+
+            'Dim tokens As String() = line.Split(New Char() {" "c}, 9, StringSplitOptions.RemoveEmptyEntries)
+            'Dim name As String = tokens(8)
+            'Dim permissions As String = tokens(0)
+            'Dim localFilePath As String = Path.Combine(localPath, name)
+            'Dim fileUrl As String = url & name
+
+            'If permissions(0) = "d"c Then
+            '    'Directory.CreateDirectory(localFilePath)
+            '    'DownloadFtpDirectory(fileUrl & "/", userName, password, localFilePath)
+            'Else
+            '    Me.DownloadFtpFile(fileUrl, userName, password, localFilePath)
+            'End If
+        Next
+    End Sub
+
+    Private Function GetMatchingRegex(ByVal parseFormats As String(), ByVal line As String) As Match
+        Dim regex As Regex = Nothing
+        Dim m As Match = Nothing
+        For i As Integer = 0 To parseFormats.Length - 1
+            regex = New Regex(parseFormats(i))
+            m = regex.Match(line)
+            If m.Success Then
+                Return m
+            End If
+        Next
+        Return Nothing
+    End Function
+
+    Private Sub DownloadFtpFile(ByVal url As String, ByVal userName As String, ByVal password As String, ByVal localPath As String)
+        Dim req As FtpWebRequest = DirectCast(WebRequest.Create(url), FtpWebRequest)
+        req.UsePassive = True
+        req.UseBinary = True
+        req.Method = WebRequestMethods.Ftp.DownloadFile
+        req.Credentials = New NetworkCredential(userName, password)
+
+        Using resp As FtpWebResponse = DirectCast(req.GetResponse(), FtpWebResponse)
+            Using reader As New StreamReader(resp.GetResponseStream())
+                Using ms As New MemoryStream
+                    reader.BaseStream.CopyTo(ms)
+                    IO.File.WriteAllBytes(localPath, ms.ToArray)
+                End Using
+            End Using
+        End Using
+    End Sub
+
+    Private Sub CaricaCaselle()
+        Dim caselle As New ParsecAdmin.ParametriPecRepository
+        Dim utente As ParsecAdmin.Utente = ParsecUtility.Applicazione.UtenteCorrente
+        Dim caselleEmail = caselle.GetViewAssociatoUtente(utente.Id)
+        Me.CaselleEmailComboBox.DataSource = caselleEmail
+        Me.CaselleEmailComboBox.DataTextField = "Email"
+        Me.CaselleEmailComboBox.DataValueField = "Id"
+        Me.CaselleEmailComboBox.DataBind()
+
+        Me.CaselleEmailComboBox.Items.Insert(0, New RadComboBoxItem("", -1))
+
+        'SE C'E' UNA SOLA CASELLA LA SELEZIONO
+        If caselleEmail.Count = 1 Then
+            Me.CaselleEmailComboBox.SelectedIndex = 1
+        Else
+            Me.CaselleEmailComboBox.SelectedIndex = 0
+        End If
+
+    End Sub
+
+    Private Sub AggiornaSettore()
+        If Not Session("SelectedStructures") Is Nothing Then
+            Dim struttureSelezionate As List(Of ParsecAdmin.StrutturaAbilitata) = Session("SelectedStructures")
+            Dim idSettore As Integer = struttureSelezionate.First.Id
+            'Aggiorno il settore
+            Me.SettoreTextBox.Text = struttureSelezionate.First.Descrizione
+            Me.IdSettoreTextBox.Text = idSettore.ToString
+            Session("SelectedStructures") = Nothing
+        End If
+    End Sub
+
+    Private Sub TrovaReferenteInterno()
+        Dim pageUrl As String = "~/UI/Amministrazione/pages/search/RicercaOrganigrammaPage.aspx"
+        Dim queryString As New Hashtable
+        queryString.Add("obj", Me.AggiornaSettoreImageButton.ClientID)
+
+        Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+        Dim parametriPagina As New Hashtable
+        parametriPagina.Add("IdModulo", 2)
+        parametriPagina.Add("IdUtente", utenteCollegato.Id)
+        parametriPagina.Add("tipoSelezione", 0) 'singola
+        parametriPagina.Add("livelliSelezionabili", "100,200,300,400")
+        parametriPagina.Add("ultimoLivelloStruttura", "400")
+        ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+        ParsecUtility.Utility.ShowPopup(pageUrl, 910, 670, queryString, False)
+    End Sub
+
+#End Region
+
+#Region "EVENTI GRIGLIA"
+
+    Protected Sub ProtocolliGridView_ItemCommand(sender As Object, e As Telerik.Web.UI.GridCommandEventArgs) Handles ProtocolliGridView.ItemCommand
+        If e.CommandName = "Preview" Then
+            Dim IdRegistrazione As Integer = e.Item.OwnerTableView.DataKeyValues(e.Item.ItemIndex)("IdProtocollo")
+            Dim pageUrl As String = "~/UI/Protocollo/pages/search/VisualizzaRegistrazionePage.aspx"
+            Dim parametriPagina As New Hashtable
+            parametriPagina.Add("Filtro", IdRegistrazione)
+            ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+            ParsecUtility.Utility.ShowPopup(pageUrl, 940, 510, Nothing, False)
+        End If
+        If e.CommandName = "Modifica" Then
+            Dim script As New Text.StringBuilder
+            script.AppendLine("<script language='javascript'>")
+            script.AppendLine("ShowEditEmailPanel();hideEditPanel=false;")
+            script.AppendLine("</script>")
+            ParsecUtility.Utility.RegisterScript(script, False)
+
+            Dim codice As String = e.Item.OwnerTableView.DataKeyValues(e.Item.ItemIndex)("CodiceIstat")
+            Dim info = Me.InfoProtocolli.Where(Function(c) c.CodiceIstat = codice).FirstOrDefault
+            Me.ModificaEmailTextBox.Text = String.Empty
+            Me.CodiceIstatHiddenField.Value = codice
+            If Not info Is Nothing Then
+                If info.Email <> "&nbsp;" Then
+                    Me.ModificaEmailTextBox.Text = info.Email
+                End If
+            End If
+
+
+        End If
+    End Sub
+
+    Protected Sub ProtocolliGridView_NeedDataSource(sender As Object, e As Telerik.Web.UI.GridNeedDataSourceEventArgs) Handles ProtocolliGridView.NeedDataSource
+        Me.ProtocolliGridView.DataSource = Me.InfoProtocolli
+    End Sub
+
+    Protected Sub ProtocolliGridView_ItemDataBound(sender As Object, e As Telerik.Web.UI.GridItemEventArgs) Handles ProtocolliGridView.ItemDataBound
+        Dim statoButton As ImageButton = Nothing
+        Dim statoProtocollazioneButton As ImageButton = Nothing
+        Dim previewButton As ImageButton = Nothing
+
+
+        If TypeOf e.Item Is Telerik.Web.UI.GridDataItem Then
+            Dim dataItem As Telerik.Web.UI.GridDataItem = e.Item
+
+            Dim info As InfoProtocollo = CType(e.Item.DataItem, InfoProtocollo)
+
+            If TypeOf dataItem("Stato").Controls(0) Is ImageButton Then
+                statoButton = CType(dataItem("Stato").Controls(0), ImageButton)
+                statoProtocollazioneButton = CType(dataItem("StatoProtocollazione").Controls(0), ImageButton)
+                previewButton = CType(dataItem("Preview").Controls(0), ImageButton)
+
+                statoButton.Enabled = False
+                statoProtocollazioneButton.Enabled = False
+
+                If info.IdProtocollo.HasValue Then
+                    previewButton.ImageUrl = "~\images\knob-search16.png"
+                    previewButton.ToolTip = "Visualizza Protocollo..."
+                Else
+                    previewButton.ImageUrl = "~\images\vuoto.png"
+                    previewButton.ToolTip = ""
+                    previewButton.Enabled = False
+                End If
+
+                If info.Processata Then
+                    If Not String.IsNullOrEmpty(info.ErroreElaborazione) Then
+                        statoProtocollazioneButton.ImageUrl = "~\images\alert16.png"
+                        statoProtocollazioneButton.ToolTip = info.ErroreElaborazione
+                    Else
+                        statoProtocollazioneButton.ImageUrl = "~\images\Successo16.png"
+                        statoProtocollazioneButton.ToolTip = ""
+                    End If
+                Else
+                    statoProtocollazioneButton.ImageUrl = "~\images\vuoto.png"
+                    statoProtocollazioneButton.ToolTip = ""
+                End If
+
+
+                If info.Valido Then
+                    statoButton.ImageUrl = "~\images\pVerde16.png"
+                    statoButton.ToolTip = "Protocollabile"
+                Else
+                    statoButton.ImageUrl = "~\images\pRosso16.png"
+                    statoButton.ToolTip = "Non Protocollabile" & vbCrLf & info.ErroreCaricamento
+                End If
+            End If
+        End If
+    End Sub
+
+    Private Sub ProtocolliGridView_ItemCreated(ByVal sender As Object, ByVal e As GridItemEventArgs) Handles ProtocolliGridView.ItemCreated
+        If TypeOf e.Item Is GridHeaderItem Then
+            e.Item.Style.Add("position", "relative")
+            e.Item.Style.Add("top", "expression(this.offsetParent.scrollTop-1)")
+            e.Item.Style.Add("z-index", "99")
+            e.Item.Style.Add("background-color", "White")
+        End If
+    End Sub
+
+#End Region
+
+End Class

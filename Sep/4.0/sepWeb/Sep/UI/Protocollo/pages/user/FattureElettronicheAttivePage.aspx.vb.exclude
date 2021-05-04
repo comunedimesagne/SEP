@@ -1,0 +1,1309 @@
+﻿Imports Telerik.Web.UI
+Imports System.IO
+Imports System.Net
+Imports ParsecPro
+Imports System.Xml
+
+Partial Class FattureElettronicheAttivePage
+    Inherits System.Web.UI.Page
+
+    Private WithEvents MainPage As Object
+    Dim ControlliPagina As ControlCollection
+    Private message As StringBuilder
+    Dim IdUtente As Integer
+
+#Region "PROPRIETA'"
+
+    'Variabile di Sessione: lista delle Fatture Elettroniche Attive sulla quale viene costruita la griglia
+    Public Property FattureElettronicheAttive() As List(Of ParsecPro.FatturaConservazioneAttiva)
+        Get
+            Return CType(Session("FattureElettronicheAttivePage_FattureElettronicheAttive"), List(Of ParsecPro.FatturaConservazioneAttiva))
+        End Get
+        Set(ByVal value As List(Of ParsecPro.FatturaConservazioneAttiva))
+            Session("FattureElettronicheAttivePage_FattureElettronicheAttive") = value
+        End Set
+    End Property
+
+    'Variabile di Sessione: Fattura Elettronica Attiva "Corrente"
+    Public Property FatturaElettronicaAttiva() As FatturaElettronicaAttiva
+        Get
+            Return CType(Session("FattureElettronicheAttivePage_FatturaElettronicaAttiva"), FatturaElettronicaAttiva)
+        End Get
+        Set(ByVal value As FatturaElettronicaAttiva)
+            Session("FattureElettronicheAttivePage_FatturaElettronicaAttiva") = value
+        End Set
+    End Property
+
+    'Variabile di Sessione: lista di Id delle Fatture Elettroniche Attive selezionate nella griglia
+    Public Property SelectedItems As Dictionary(Of String, Boolean)
+        Get
+            If Session("FattureElettronicheAttivePage_SelectedItems") Is Nothing Then
+                Session("FattureElettronicheAttivePage_SelectedItems") = New Dictionary(Of String, Boolean)
+            End If
+            Return CType(Session("FattureElettronicheAttivePage_SelectedItems"), Dictionary(Of String, Boolean))
+        End Get
+        Set(ByVal value As Dictionary(Of String, Boolean))
+            Session("FattureElettronicheAttivePage_SelectedItems") = value
+        End Set
+    End Property
+
+    'Variabile di Sessione: contenuto Html della Fattura in formato Html
+    Public Property HtmlFattura As String
+        Get
+            Return CType(Session("FattureElettronicheAttivePage_HtmlFattura"), String)
+        End Get
+        Set(ByVal value As String)
+            Session("FattureElettronicheAttivePage_HtmlFattura") = value
+        End Set
+    End Property
+
+    ''Variabile di Sessione: lista degli Allegati contenuti nella Fattura
+    Public Property AllegatiFattura As List(Of ParsecPro.AllegatoFattura)
+        Get
+            Return CType(Session("FattureElettronicheAttivePage_AllegatiFattura"), List(Of ParsecPro.AllegatoFattura))
+        End Get
+        Set(ByVal value As List(Of ParsecPro.AllegatoFattura))
+            Session("FattureElettronicheAttivePage_AllegatiFattura") = value
+        End Set
+    End Property
+
+    ''Variabile di Sessione: Informazioni dell'Ente titolare dell'Applictivo
+    Public Property Cliente() As ParsecAdmin.Cliente
+        Get
+            Return CType(Session("FattureElettronicheAttivePage_Cliente"), ParsecAdmin.Cliente)
+        End Get
+        Set(ByVal value As ParsecAdmin.Cliente)
+            Session("FattureElettronicheAttivePage_Cliente") = value
+        End Set
+    End Property
+
+#End Region
+
+
+#Region "EVENTI PAGINA"
+
+    'Evento Init della Pagina: inizializza la pagina.
+    Protected Sub Page_Init(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Init
+
+        IdUtente = CType(Session("CurrentUser"), ParsecAdmin.Utente).Id
+        MainPage = CType(Me.Master, MainPage)
+        MainPage.NomeModulo = "Protocollo"
+        MainPage.DescrizioneProcedura = "> Conservazione Fatture Elettroniche Attive"
+        ControlliPagina = MainPage.Content.FindControl("Pannello").Controls.Item(0).Controls
+
+        Dim css As HtmlGenericControl
+        css = New HtmlGenericControl
+        css.TagName = "style"
+        css.Attributes.Add("type", "text/css")
+        css.InnerHtml = "div.RadUploadProgressArea_Office2007 .ruProgress { background-image: none;}" & vbCrLf
+        css.InnerHtml += ".RadUploadProgressArea { width: 320px !important;}" & vbCrLf
+        css.InnerHtml += "div.RadUploadProgressArea li.ruProgressHeader{ margin: 10px 18px 0px; }" & vbCrLf
+        css.InnerHtml += "table.CkeckListCss tr td label {margin-right:10px;padding-right:10px;}" & vbCrLf
+        Me.Page.Header.Controls.Add(css)
+
+        If Not IsPostBack Then
+            Me.FattureElettronicheAttive = New List(Of ParsecPro.FatturaConservazioneAttiva)
+            Me.AllegatiFattura = New List(Of AllegatoFattura)
+            Me.SelectedItems = Nothing
+            Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+
+            Dim clienteRepository As New ParsecAdmin.ClientRepository
+            Dim cliente = clienteRepository.GetAll().FirstOrDefault
+            Me.Cliente = cliente
+            clienteRepository.Dispose()
+
+            Me.ResettaFiltro()
+
+            Dim limitePagine = GetlimiteNumeroPagineRicerca()
+            If (limitePagine = -1) Then
+                Me.NoPaging.Visible = False
+            End If
+
+            Me.chkDaInviare.Checked = True
+            Me.chkInviate.Checked = False
+            Me.chkArchiviate.Checked = False
+
+        End If
+
+        ParsecUtility.Utility.CloseWindow(False)
+        Me.ChiudiButton.Attributes.Add("onclick", "HidePanel();hide=true;return false;")
+    End Sub
+
+    'Evento LoadComplete della Pagina: dopo che la pagina è stata caricata setta i titoli delle Griglie e ripulisce il pannello che visualizza la fattura.
+    Protected Sub Page_LoadComplete(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.LoadComplete
+
+        If Not Me.FattureElettronicheAttive Is Nothing Then
+            Me.TitoloElencoFattureLabel.Text = "Elenco Fatture Elettroniche " & If(Me.FattureElettronicheAttive.Count > 0, "( " & Me.FattureElettronicheAttive.Count.ToString & " )", "")
+        End If
+
+        If Not Me.HtmlFattura Is Nothing Then
+            Me.pannelloFattura.Controls.Clear()
+            Me.pannelloFattura.Controls.Add(New LiteralControl(Me.HtmlFattura))
+        End If
+        Me.DocumentiLabel.Text = "Allegati " & If(Me.AllegatiFattura.Count > 0, "<span style='width:20px;color:#00156E'>&nbsp;(" & Me.AllegatiFattura.Count.ToString & ")</span>", "")
+        Me.InviaButton.Enabled = Me.rgrdFattureEmesse.SelectedItems.Count > 0
+
+    End Sub
+
+#End Region
+
+#Region "EVENTI GRIGLIA"
+
+    'Evento NeedDataSource associato alla griglia rgrdFattureEmesse. Aggancia il datasource della griglia al DB e aggiorna la lista variabile di sessione FattureElettroniche.
+    Protected Sub rgrdFattureEmesse_NeedDataSource(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridNeedDataSourceEventArgs) Handles rgrdFattureEmesse.NeedDataSource
+
+        If Me.FattureElettronicheAttive Is Nothing Then
+            Dim filtro = Me.getFiltroFatturaAttiva
+            If Not filtro.Inviati AndAlso Not filtro.DaInviare AndAlso Not filtro.Archiviati Then
+                Me.FattureElettronicheAttive = New List(Of ParsecPro.FatturaConservazioneAttiva)
+            Else
+                Dim fatturaAttivaRepository As New ParsecPro.FatturaElettronicaAttivaRepository
+                Me.FattureElettronicheAttive = fatturaAttivaRepository.GetView(Me.getFiltroFatturaAttiva)
+                fatturaAttivaRepository.Dispose()
+            End If
+
+        End If
+        Me.rgrdFattureEmesse.DataSource = Me.FattureElettronicheAttive
+
+    End Sub
+
+    'Evento ItemDataBound associato alla griglia rgrdFattureEmesse. Definisce i Tooltip e le icone in base al contenuto delle celle della griglia. Inoltre può disattivare il click del pulsante che invia al Modulo archivio
+    Protected Sub rgrdFattureEmesse_ItemDataBound(sender As Object, e As Telerik.Web.UI.GridItemEventArgs) Handles rgrdFattureEmesse.ItemDataBound
+
+        If TypeOf e.Item Is GridFilteringItem Then
+            Dim filterItem As GridFilteringItem = DirectCast(e.Item, GridFilteringItem)
+            'Stato Fattura
+            Dim comboA As RadComboBox = DirectCast(filterItem.FindControl("rcbConservabile"), RadComboBox)
+            comboA.SelectedValue = filterItem.OwnerTableView.GetColumn("Conservabile").CurrentFilterValue
+        End If
+
+        If TypeOf e.Item Is Telerik.Web.UI.GridDataItem Then
+            Dim btnStato As ImageButton = Nothing
+            Dim btnInviaArchivio As ImageButton = Nothing
+
+            Dim dataItem As Telerik.Web.UI.GridDataItem = e.Item
+            Dim fattura As ParsecPro.FatturaConservazioneAttiva = CType(e.Item.DataItem, ParsecPro.FatturaConservazioneAttiva)
+
+            btnStato = CType(dataItem("Conservabile").Controls(0), ImageButton)
+            btnStato.Attributes.Add("onclick", "return false")
+
+            'pulsante per lo sblocco dall'Archiviazione
+            btnInviaArchivio = CType(dataItem("SbloccaFattura").Controls(0), ImageButton)
+
+            Dim chk As CheckBox = CType(dataItem.FindControl("SelectCheckBox"), CheckBox)
+
+            If (fattura.Conservabile = "NO") Then
+                'fattura scartata
+                btnStato.ImageUrl = "~/images/pRosso16.png"
+            ElseIf (fattura.Conservabile = "NI") Then
+                ' la fattura è dubbia
+                btnStato.ImageUrl = "~/images/pBlue16.png"
+            ElseIf (fattura.Conservabile = "AC") Then
+                'accettazione committente
+                btnStato.ImageUrl = "~/images/pVerde16.png"
+            Else
+                'decorrenza termini
+                btnStato.ImageUrl = "~/images/pArancio16.png"
+            End If
+
+            btnStato.ToolTip = fattura.Note
+            chk.ToolTip = fattura.Note
+
+            If (fattura.Conservabile = "NI" Or fattura.Conservabile = "AC" Or fattura.Conservabile = "DT") Then
+                If (Not fattura.IdDocumentoWS Is Nothing) Then
+                    chk.Enabled = False
+                    btnInviaArchivio.ImageUrl = "~/images/Unlock_16.png"
+                    btnInviaArchivio.ToolTip = "Sblocca Fattura dal Modulo Archivio."
+                Else
+                    chk.Enabled = True
+                    btnInviaArchivio.ImageUrl = "~/images/vuoto.png"
+                    btnInviaArchivio.ToolTip = "Fattura inviabile al Modulo Archivio."
+                    btnInviaArchivio.Attributes.Add("onclick", "return false")
+                End If
+            Else
+                chk.Enabled = False
+                btnInviaArchivio.ImageUrl = "~/images/vuoto.png"
+                btnInviaArchivio.ToolTip = "Fattura non inviabile al Modulo Archivio."
+                btnInviaArchivio.Attributes.Add("onclick", "return false")
+            End If
+
+
+
+            Dim btnPreview As ImageButton = CType(dataItem("Preview").Controls(0), ImageButton)
+            btnPreview.ToolTip = "Visualizza Fattura " + fattura.NomeFileFattura.ToString
+
+        End If
+    End Sub
+
+    Protected Sub rgrdFattureEmesse_ItemCommand(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridCommandEventArgs) Handles rgrdFattureEmesse.ItemCommand
+        Select Case e.CommandName
+
+            Case "Preview"
+                Dim script As New Text.StringBuilder
+                script.AppendLine("<script language='javascript'>")
+                script.AppendLine("ShowPanel();hide=false;")
+                script.AppendLine("</script>")
+                ParsecUtility.Utility.RegisterScript(script, False)
+                GrigliaAllegatiPanel.Visible = True
+                Me.AnteprimaFattura(e.Item)
+
+            Case "SbloccaFattura"
+                Me.SbloccaFattura(e.Item)
+
+            Case "VisualizzaProtocollo"
+                Me.VisualizzaProtocollo(e.Item)
+
+        End Select
+    End Sub
+
+    Protected Sub ToggleRowSelection(ByVal sender As Object, ByVal e As EventArgs)
+        CType(CType(sender, CheckBox).NamingContainer, GridItem).Selected = CType(sender, CheckBox).Checked
+        'Me.SaveSelectedItems()
+    End Sub
+
+    Protected Sub ToggleSelectedState(ByVal sender As Object, ByVal e As EventArgs)
+        Dim headerCheckBox As CheckBox = CType(sender, CheckBox)
+        For Each dataItem As GridDataItem In Me.rgrdFattureEmesse.MasterTableView.Items
+            Dim chk As CheckBox = CType(dataItem.FindControl("SelectCheckBox"), CheckBox)
+            If chk.Enabled Then
+                chk.Checked = headerCheckBox.Checked
+                dataItem.Selected = headerCheckBox.Checked
+            End If
+        Next
+        'Me.SaveSelectedItems()
+    End Sub
+
+    Protected Sub rgrdFattureEmesse_ItemCreated(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridItemEventArgs) Handles rgrdFattureEmesse.ItemCreated
+        If TypeOf e.Item Is Telerik.Web.UI.GridPagerItem Then
+            Dim pageSizeComboBox As RadComboBox = CType(e.Item.FindControl("PageSizeComboBox"), RadComboBox)
+            pageSizeComboBox.Visible = False
+            Dim changePageSizelbl As Label = CType(e.Item.FindControl("ChangePageSizeLabel"), Label)
+            changePageSizelbl.Visible = False
+        End If
+    End Sub
+
+    Protected Sub DocumentiGridView_ItemCommand(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridCommandEventArgs) Handles DocumentiGridView.ItemCommand
+        If e.CommandName = "Preview" Then
+            Me.DownloadFileFattura(e.Item)
+        End If
+    End Sub
+
+#End Region
+
+#Region "METODI PRIVATI"
+
+    Protected Sub EsportaInExcelImageButton_Click(sender As Object, e As System.Web.UI.ImageClickEventArgs) Handles EsportaInExcelImageButton.Click
+
+        'Dim trovata As Boolean = False
+
+        'For Each p In Me.FattureElettronicheAttive
+        '    trovata = True
+        '    Exit For
+        'Next
+        If FattureElettronicheAttive.Count = 0 Then
+            ParsecUtility.Utility.MessageBox("Non ci sono Fatture." & vbCrLf & "Impossibile eseguire l'esportazione!", False)
+            Exit Sub
+        End If
+        'If Not trovata Then
+        '    ParsecUtility.Utility.MessageBox("Non ci sono Fatture." & vbCrLf & "Impossibile eseguire l'esportazione!", False)
+        '    Exit Sub
+        'End If
+
+        Dim utente As ParsecAdmin.Utente = ParsecUtility.Applicazione.UtenteCorrente
+        Dim exportFilename As String = String.Format("FattureAttive_UT{0}_AL_{1}.xls", utente.Id, Now.ToString("ddMM_yyyy_hhmmss"))
+
+        Dim pathExport As String = ParsecAdmin.WebConfigSettings.GetKey("PathDocumentiTemp")
+
+        Dim fullPathExport As String = pathExport & exportFilename
+
+        Dim swExport As New IO.StreamWriter(fullPathExport, False, System.Text.Encoding.Default)
+        Dim line As New StringBuilder
+
+
+        line.Append("STATO" & vbTab)
+        line.Append("NNUMERO FATTURA" & vbTab)
+        line.Append("DATA FATTURA" & vbTab)
+        line.Append("CLIENTE" & vbTab)
+        line.Append("PARTITA IVA" & vbTab)
+        line.Append("TOTALE FATTURA" & vbTab)
+        line.Append("NUMERO PROTOCOLLO" & vbTab)
+        line.Append("DATA PROTOCOLLO" & vbTab)
+
+        swExport.WriteLine(line.ToString)
+        line.Clear()
+
+        For Each p In Me.FattureElettronicheAttive
+
+            Dim statoFattura As String = ""
+
+            Select Case (p.Conservabile)
+                Case "NO"
+                    statoFattura = "Presente la notifica di rifiuto del Committente."
+                Case "NI"
+                    statoFattura = "Sono presenti sia la notifica di scarto che la decorrenza dei termini."
+                Case "AC"
+                    statoFattura = "Presente la notifica di accettazione del Committente."
+                Case "SI"
+                    statoFattura = "Sono presenti sia la decorrenza dei termini che la accettazione del Committente"
+                Case "DT"
+                    statoFattura = "Presente la notifica di decorrenza dei termini."
+                Case Else
+                    statoFattura = p.Conservabile
+            End Select
+
+
+            line.Append(statoFattura & vbTab)
+            line.Append(p.NumeroFattura.ToString & vbTab)
+            line.Append(String.Format("{0:dd-MM-yyyy}", p.DataFattura) & vbTab)
+
+            'SOSTITUISCO TUTTO TRANNE I CARATTERI SPECIFICATI DAL RANGE 
+            line.Append(System.Text.RegularExpressions.Regex.Replace(p.DenominazioneCliente, "[^\u0020-\u00FF]", " ") & vbTab)
+
+            line.Append(p.PIVACliente & vbTab)
+            line.Append(p.TotaleFattura.ToString & vbTab)
+            line.Append(p.NumeroProtocollo.ToString.PadLeft(7, "0") & vbTab)
+            line.Append(String.Format("{0:dd-MM-yyyy}", p.DataProtocollo) & vbTab)
+
+
+
+            swExport.WriteLine(line.ToString)
+            line.Clear()
+
+        Next
+        swExport.Close()
+
+        Session("AttachmentFullName") = fullPathExport
+
+        Dim pageUrl As String = "~/UI/Amministrazione/pages/user/ExportExcelPage.aspx"
+        ParsecUtility.Utility.PageReload(pageUrl, False)
+
+
+    End Sub
+
+
+    Private Function GetlimiteNumeroPagineRicerca() As Integer
+        Dim limiteNumeroPAgine As Integer = -1
+        Dim parametri As New ParsecAdmin.ParametriRepository
+        Dim parametro As ParsecAdmin.Parametri = parametri.GetByName("limiteNumeroPaginazioneConservazione", ParsecAdmin.TipoModulo.CSZ)
+        If Not parametro Is Nothing Then
+            limiteNumeroPAgine = CInt(parametro.Valore)
+        End If
+        parametri.Dispose()
+        Return limiteNumeroPAgine
+    End Function
+
+    Protected Sub NoPaging_Click(sender As Object, e As System.EventArgs) Handles NoPaging.Click
+
+        Dim limitePagine = GetlimiteNumeroPagineRicerca()
+        If (Me.rgrdFattureEmesse.PageCount > limitePagine) Then
+            ParsecUtility.Utility.MessageBox("Il numero di record risultante dalla ricerca è eccessivo: si prega di raffinare la ricerca!", False)
+            Exit Sub
+        End If
+
+        Me.rgrdFattureEmesse.AllowPaging = Not Me.rgrdFattureEmesse.AllowPaging
+        If Me.rgrdFattureEmesse.AllowPaging Then
+            Me.NoPaging.Text = "Non Paginare"
+            Me.NoPaging.Icon.PrimaryIconUrl = "~/images/Next.png"
+        Else
+            Me.NoPaging.Text = "Paginare"
+            Me.NoPaging.Icon.PrimaryIconUrl = "~/images/Previous.png"
+        End If
+        Me.rgrdFattureEmesse.Rebind()
+    End Sub
+
+    Private Function GetAnnoEsercizio() As Integer
+        Dim annoEsercizio As Integer = Now.Year
+        Dim parametri As New ParsecAdmin.ParametriRepository
+        Dim parametro As ParsecAdmin.Parametri = parametri.GetByName("AnnoCorrente", ParsecAdmin.TipoModulo.ATT)
+        If Not parametro Is Nothing Then
+            annoEsercizio = CInt(parametro.Valore)
+        End If
+        parametri.Dispose()
+        Return annoEsercizio
+    End Function
+
+    Private Sub SbloccaFattura(ByVal item As Telerik.Web.UI.GridDataItem)
+
+        Try
+            Dim idFatturaAttiva As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+            Dim idDocumentoWS As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("IdDocumentoWS")
+
+            If (idDocumentoWS > 0) Then
+                Dim wsConservazione As New wsConservazione.wsConservazione
+
+                Dim soapGetDocumentoRequest As New wsConservazione.SoapGetDocumentoRequest
+                soapGetDocumentoRequest.codiceLicenza = Me.Cliente.CodLicenza
+                Dim wsFiltroDocumento As New wsConservazione.DocumentoBaseConservazioneFiltro
+                wsFiltroDocumento.idDocumento = idDocumentoWS
+                soapGetDocumentoRequest.documentoFiltro = wsFiltroDocumento
+
+                Dim soapDocumentoBaseResponse = wsConservazione.getDocumento(soapGetDocumentoRequest)
+                If (soapDocumentoBaseResponse.messaggioErrore = "") Then
+                    If (soapDocumentoBaseResponse.ListaDocumentiBase(0).idPacchettoVersamento.HasValue) Then
+                        Throw New Exception("Fattura già impacchettata: impossibile sbloccarla: " & soapDocumentoBaseResponse.messaggioErrore)
+                    Else
+
+                        Dim soapCancellaDocumentoRequest = New wsConservazione.SoapCancellaDocumentoRequest
+                        soapCancellaDocumentoRequest.codiceLicenza = Me.Cliente.CodLicenza
+                        soapCancellaDocumentoRequest.documentoFiltro = wsFiltroDocumento
+
+                        Dim soapCancellazioneDocumentoResponse = wsConservazione.cancellaDocumento(soapCancellaDocumentoRequest)
+                        If (soapCancellazioneDocumentoResponse.messaggioErrore <> "") Then
+                            Throw New Exception(soapDocumentoBaseResponse.messaggioErrore)
+                        Else
+                            Dim fatturaAttivaRep As New ParsecPro.FatturaElettronicaAttivaRepository
+                            Dim fatturaAttiva = fatturaAttivaRep.GetById(idFatturaAttiva)
+                            If (Not fatturaAttiva Is Nothing) Then
+                                fatturaAttiva.IdDocumentoWS = Nothing
+                                fatturaAttivaRep.Save(fatturaAttiva)
+
+                                Me.FattureElettronicheAttive = fatturaAttivaRep.GetView(getFiltroFatturaAttiva)
+                                Me.rgrdFattureEmesse.Rebind()
+                                fatturaAttivaRep.Dispose()
+
+                            End If
+                            ParsecUtility.Utility.MessageBox("Fattura sbloccata con successo.", False)
+                        End If
+                    End If
+                Else
+                    Throw New Exception(soapDocumentoBaseResponse.messaggioErrore)
+                End If
+            Else
+                'Throw New Exception("Documento già Conservato: impossibile cancellarlo!")
+            End If
+
+        Catch ex As Exception
+            ParsecUtility.Utility.MessageBox(ex.Message, False)
+        End Try
+
+    End Sub
+
+    Private Sub DownloadFileFattura(ByVal item As Telerik.Web.UI.GridDataItem)
+        Dim filename As String = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Nomefile")
+        Dim allegato As ParsecPro.AllegatoFattura = Me.AllegatiFattura.Where(Function(c) c.Nomefile = filename).FirstOrDefault
+        If Not allegato Is Nothing Then
+            Dim estensione As String = IO.Path.GetExtension(filename)
+            Dim ht As New Hashtable
+            ht.Add("Content", allegato.Content)
+            ht.Add("Extension", estensione)
+            Session("AttachmentFullName") = ht
+            Dim pageUrl As String = "~/UI/Amministrazione/pages/user/DownloadPage.aspx"
+            If estensione.ToLower = ".pdf" Then
+                ParsecUtility.Utility.ShowPopup(pageUrl, 800, 600, Nothing, False)
+            Else
+                ParsecUtility.Utility.PageReload(pageUrl, False)
+            End If
+
+        End If
+    End Sub
+
+    Private Function CaricaFattura(fattura As XElement) As ParsecPro.FatturaElettronicaAttiva
+        Dim fatturaElettronicaAttiva As New ParsecPro.FatturaElettronicaAttiva
+
+        Dim header = fattura.Element("FatturaElettronicaHeader")
+        'Dim VersioneCompleta As String = fattura.FirstAttribute
+
+        'VersioneCompleta = VersioneCompleta.Replace("http://www.fatturapa.gov.it/sdi/fatturapa/", "")
+        'VersioneCompleta = VersioneCompleta.Replace("v", "").Replace(".", "")
+        'VersioneCompleta = "SDI" + VersioneCompleta
+        'versione fattura
+        Dim datiTrasmisisone = header.Element("DatiTrasmissione")
+        Dim versioneFattura = datiTrasmisisone.Element("FormatoTrasmissione").Value
+
+        'Destinatario Fattura
+        Dim CessionarioCommittente = header.Element("CessionarioCommittente")
+        Dim datiAnagrafici = CessionarioCommittente.Element("DatiAnagrafici")
+        Dim anagrafica = datiAnagrafici.Element("Anagrafica")
+
+        Dim denominazioneCliente As String = String.Empty
+
+        Dim codiceFiscale As String = String.Empty
+
+        Dim Valuta As String = String.Empty
+        Dim ImponibileImporto As String = String.Empty
+        Dim Imposta As String = String.Empty
+
+        If Not anagrafica.Element("Denominazione") Is Nothing Then
+            denominazioneCliente = anagrafica.Element("Denominazione").Value
+        End If
+
+        If Not datiAnagrafici.Element("CodiceFiscale") Is Nothing Then
+            codiceFiscale = datiAnagrafici.Element("CodiceFiscale").Value
+        End If
+
+
+        Dim Oggetto As String = String.Empty
+        Dim body = fattura.Elements("FatturaElettronicaBody")
+        Dim i As Integer = 0
+
+        Dim NumeroFattura As String = String.Empty, DataFattura As String = String.Empty, tipoDocumento As String = String.Empty
+
+        For Each datiGenerali In body
+            i += 1
+            Dim datiGeneraliDocumento = datiGenerali.Element("DatiGenerali").Element("DatiGeneraliDocumento")
+
+            NumeroFattura = datiGeneraliDocumento.Element("Numero").Value
+            DataFattura = Date.Parse(datiGeneraliDocumento.Element("Data").Value).ToShortDateString
+            Valuta = datiGeneraliDocumento.Element("Divisa").Value
+
+            Dim descrizioneTipoDocumento As String = "Fattura"
+            If Not datiGeneraliDocumento.Element("TipoDocumento") Is Nothing Then
+
+                tipoDocumento = datiGeneraliDocumento.Element("TipoDocumento").Value
+
+                Select Case tipoDocumento
+                    Case "TD01"
+                        descrizioneTipoDocumento = "Fattura"
+                    Case "TD02"
+                        descrizioneTipoDocumento = "Acconto/anticipo su fattura"
+                    Case "TD03"
+                        descrizioneTipoDocumento = "Acconto/anticipo su parcella"
+                    Case "TD04"
+                        descrizioneTipoDocumento = "Nota di credito"
+                    Case "TD05"
+                        descrizioneTipoDocumento = "Nota di debito"
+                    Case "TD06"
+                        descrizioneTipoDocumento = "Parcella"
+                End Select
+            End If
+
+            Oggetto &= descrizioneTipoDocumento & " n. " & NumeroFattura.ToString
+
+            Oggetto &= " del " & DataFattura
+            If i <> body.Count Then
+                Oggetto &= " - "
+            End If
+
+        Next
+
+        For Each datiBeniServizi In body
+            Dim datiRiepilogo = datiBeniServizi.Element("DatiBeniServizi").Element("DatiRiepilogo")
+
+            ImponibileImporto = datiRiepilogo.Element("ImponibileImporto").Value
+            Imposta = datiRiepilogo.Element("Imposta").Value
+        Next
+
+        fatturaElettronicaAttiva.NumeroFattura = NumeroFattura
+        fatturaElettronicaAttiva.DataFattura = DataFattura
+        fatturaElettronicaAttiva.Oggetto = Oggetto
+        fatturaElettronicaAttiva.TipologiaDocumento = tipoDocumento
+        fatturaElettronicaAttiva.DenominazioneCliente = denominazioneCliente
+        fatturaElettronicaAttiva.PIVACliente = codiceFiscale
+        fatturaElettronicaAttiva.CFCliente = codiceFiscale
+        fatturaElettronicaAttiva.Valuta = Valuta
+
+        Dim Totalefattura = System.Convert.ToDecimal(ImponibileImporto.Replace(".", ",")) + System.Convert.ToDecimal(Imposta.Replace(".", ","))
+
+        fatturaElettronicaAttiva.TotaleFattura = Totalefattura
+        fatturaElettronicaAttiva.VersioneFattura = versioneFattura
+
+
+        Return fatturaElettronicaAttiva
+    End Function
+
+    Private Sub AnteprimaFattura(ByVal item As Telerik.Web.UI.GridDataItem)
+
+        Me.HtmlFattura = Nothing
+        Dim id As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+        Dim idRegistrazioneProtocollo As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("IdRegistrazione")
+
+        Dim registrazioneRepository As New ParsecPro.RegistrazioniRepository
+        Dim registrazione = registrazioneRepository.Where(Function(w) w.Id = idRegistrazioneProtocollo).FirstOrDefault
+        registrazioneRepository.Registrazione = registrazione
+        Dim allegatoPrimario = registrazioneRepository.GetAllegati(registrazione).Where(Function(w) w.IdTipologiaDocumento = 1).FirstOrDefault
+
+        Dim fE As FatturaElettronicaAttiva = (New FatturaElettronicaAttivaRepository).GetById(id)
+
+        Dim PathFatturaElettronica As String
+        Dim PathModelloFatturaElettronica As String = ParsecAdmin.WebConfigSettings.GetKey("ModelloFatturaElettronica")
+
+        Dim PathRelativoFatturaElettronica As String
+        Dim NomeFileFatturaElettronica As String = fE.NomeFileFattura
+        Dim VersioneFatturaElettronica As String = fE.VersioneFattura
+
+
+        PathFatturaElettronica = ParsecAdmin.WebConfigSettings.GetKey("PathDocumenti")
+        PathRelativoFatturaElettronica = fE.DataProtocollo.Value.Year.ToString + "\" 'Verificare percorso relativo
+
+        Dim FU As New ParsecUtility.FatturaUtility
+
+        Dim NomeFileCompleto As String = allegatoPrimario.Id.ToString.PadLeft(9, "0") & "_" & "1".PadLeft(4, "0") & "_" & allegatoPrimario.NomeFile
+        Dim path = ParsecAdmin.WebConfigSettings.GetKey("PathDocumenti") + allegatoPrimario.PercorsoRelativo + NomeFileCompleto
+
+        Try
+
+            'SCOMMENTARE E GESTIRE SE CI SONO ALLEGATI
+            Dim listaAllegatiFattura = Me.GetAllegatiFattura(path)
+            Me.AllegatiFattura = listaAllegatiFattura
+
+            If path.ToLower.EndsWith(".p7m") Then
+
+                Dim buffer As Byte() = IO.File.ReadAllBytes(path)
+                Dim signedCms As New System.Security.Cryptography.Pkcs.SignedCms
+                'SE IL CONTENUTO DEL FILE P7M E' CODIFICATO IN BASE64 LO DECODIFICO
+                Try
+                    buffer = System.Convert.FromBase64String(System.Text.ASCIIEncoding.Default.GetString(buffer))
+                Catch ex As Exception
+                    'NIENTE
+                End Try
+
+                signedCms.Decode(buffer)
+                Me.HtmlFattura = FU.TrasformaFatturaInHtmlString(PathModelloFatturaElettronica, signedCms.ContentInfo.Content, VersioneFatturaElettronica)
+            Else
+                Me.HtmlFattura = FU.TrasformaFatturaInHtmlString(PathModelloFatturaElettronica, PathFatturaElettronica + PathRelativoFatturaElettronica, NomeFileFatturaElettronica, VersioneFatturaElettronica)
+            End If
+
+            Dim script As New Text.StringBuilder
+            script.AppendLine("<script language='javascript'>")
+            script.AppendLine("ShowPanel();hide=false;")
+            script.AppendLine("</script>")
+            ParsecUtility.Utility.RegisterScript(script, False)
+            Me.GrigliaAllegatiPanel.Visible = True
+
+
+            Me.DocumentiGridView.DataSource = Me.AllegatiFattura
+            Me.DocumentiGridView.DataBind()
+
+        Catch ex As Exception
+            If IO.File.Exists(path) Then
+                Dim s = IO.File.ReadAllText(path)
+                Me.HtmlFattura = "<HR><span style='color:red;font-size:30px'>ATTENZIONE IL FILE NON E' VALIDO</span><BR><HR><BR>" & ParsecUtility.Utility.SpecialXmlEscape(s)
+
+                Me.DocumentiGridView.DataSource = Me.AllegatiFattura
+                Me.DocumentiGridView.DataBind()
+
+                Dim script As New Text.StringBuilder
+                script.AppendLine("<script language='javascript'>")
+                script.AppendLine("ShowPanel();hide=false;")
+                script.AppendLine("</script>")
+                ParsecUtility.Utility.RegisterScript(script, False)
+
+            Else
+                ParsecUtility.Utility.MessageBox(ex.Message.Replace("\", "/"), False)
+            End If
+        End Try
+
+    End Sub
+
+    Private Function GetAllegatiFattura(ByVal pathFattura As String) As List(Of ParsecPro.AllegatoFattura)
+
+        Dim el As XElement = Nothing
+        Dim ms As IO.MemoryStream = Nothing
+
+        If pathFattura.ToLower.EndsWith(".p7m") Then
+            Dim buffer As Byte() = IO.File.ReadAllBytes(pathFattura)
+            Dim signedCms As New System.Security.Cryptography.Pkcs.SignedCms
+            'SE IL CONTENUTO DEL FILE P7M E' CODIFICATO IN BASE64 LO DECODIFICO
+            Try
+                buffer = System.Convert.FromBase64String(System.Text.ASCIIEncoding.Default.GetString(buffer))
+            Catch ex As Exception
+                'NIENTE
+            End Try
+
+            signedCms.Decode(buffer)
+
+            ms = ParsecUtility.Utility.FixVersioneXml(signedCms.ContentInfo.Content)
+
+        Else
+            Dim bytes As Byte() = IO.File.ReadAllBytes(pathFattura)
+            ms = ParsecUtility.Utility.FixVersioneXml(bytes)
+
+        End If
+
+        el = XElement.Load(ms)
+
+        Dim listaAllegatiFattura As New List(Of ParsecPro.AllegatoFattura)
+
+        Dim header = el.Element("FatturaElettronicaHeader")
+
+        'SE E' UNA FATTURA ELETTRONICA
+        If Not header Is Nothing Then
+            Dim oggetto As String = String.Empty
+            Dim listaBody = el.Elements("FatturaElettronicaBody")
+            Dim i As Integer = 0
+            For Each body In listaBody
+                i += 1
+                oggetto = String.Empty
+
+                Dim datiGeneraliDocumento = body.Element("DatiGenerali").Element("DatiGeneraliDocumento")
+                Dim numerofattura = datiGeneraliDocumento.Element("Numero").Value
+
+                Dim descrizioneTipoDocumento As String = "Fattura"
+                If Not datiGeneraliDocumento.Element("TipoDocumento") Is Nothing Then
+                    Dim tipoDocumento = datiGeneraliDocumento.Element("TipoDocumento").Value
+                    Select Case tipoDocumento
+                        Case "TD01"
+                            descrizioneTipoDocumento = "Fattura"
+                        Case "TD02"
+                            descrizioneTipoDocumento = "Acconto/anticipo su fattura"
+                        Case "TD03"
+                            descrizioneTipoDocumento = "Acconto/anticipo su parcella"
+                        Case "TD04"
+                            descrizioneTipoDocumento = "Nota di credito"
+                        Case "TD05"
+                            descrizioneTipoDocumento = "Nota di debito"
+                        Case "TD06"
+                            descrizioneTipoDocumento = "Parcella"
+                    End Select
+                End If
+
+
+                oggetto &= descrizioneTipoDocumento & " n. " & numerofattura.ToString
+                Dim datafattura = Date.Parse(datiGeneraliDocumento.Element("Data").Value).ToShortDateString
+
+                oggetto &= " del " & datafattura
+
+
+                Dim allegati = body.Elements("Allegati")
+                Dim allegatoFattura As ParsecPro.AllegatoFattura = Nothing
+                For Each allegato In allegati
+                    Dim estensione As String = String.Empty
+                    If Not allegato.Element("FormatoAttachment") Is Nothing Then
+                        estensione = allegato.Element("FormatoAttachment")
+                    End If
+
+                    'GESTIONE ALGORITMO DI COMPRESSIONE
+                    If Not allegato.Element("AlgoritmoCompressione") Is Nothing Then
+                        estensione = allegato.Element("AlgoritmoCompressione").Value.ToLower
+                    End If
+
+                    allegatoFattura = New ParsecPro.AllegatoFattura
+                    allegatoFattura.Id = Guid.NewGuid.ToString
+                    allegatoFattura.Posizione = i
+
+
+                    If Not String.IsNullOrEmpty(estensione) Then
+                        allegatoFattura.Nomefile = allegato.Element("NomeAttachment").Value & "." & estensione
+                    Else
+                        allegatoFattura.Nomefile = allegato.Element("NomeAttachment").Value
+                    End If
+
+                    allegatoFattura.Estremi = oggetto
+                    allegatoFattura.Content = System.Convert.FromBase64String(allegato.Element("Attachment"))
+
+                    listaAllegatiFattura.Add(allegatoFattura)
+                Next
+
+            Next
+
+        End If
+
+        Return listaAllegatiFattura
+
+    End Function
+
+    Private Sub ResettaFiltro()
+
+        Dim dataRiferimento As Date = Now.AddDays(-1)
+
+        Me.DataInvioInizioTextBox.SelectedDate = New Date(Me.GetAnnoEsercizio, 1, 1)
+        Me.DataInvioFineTextBox.SelectedDate = Now
+        'Me.comboStatoFatturaElettronica.SelectedValue = 1
+        chkDaInviare.Checked = True
+        chkArchiviate.Checked = False
+        chkInviate.Checked = False
+
+    End Sub
+
+    Private Function getFiltroFatturaAttiva() As ParsecPro.FiltroFatturaElettronicaAttiva
+
+        Dim filtroFatturaAttiva As New ParsecPro.FiltroFatturaElettronicaAttiva
+
+        If (Me.DataInvioInizioTextBox.SelectedDate.HasValue) Then
+            Dim dataIniziale As Date = New Date(DataInvioInizioTextBox.SelectedDate.Value.Year, DataInvioInizioTextBox.SelectedDate.Value.Month, DataInvioInizioTextBox.SelectedDate.Value.Day, 0, 0, 0)
+            filtroFatturaAttiva.DataInizioInvio = dataIniziale
+        Else
+            filtroFatturaAttiva.DataInizioInvio = New Date(2015, 3, 31)
+        End If
+
+        If (Me.DataInvioFineTextBox.SelectedDate.HasValue) Then
+            Dim dataFinale As Date = New Date(DataInvioFineTextBox.SelectedDate.Value.Year, DataInvioFineTextBox.SelectedDate.Value.Month, DataInvioFineTextBox.SelectedDate.Value.Day, 23, 59, 59)
+            filtroFatturaAttiva.DataFineInvio = dataFinale
+        Else
+            filtroFatturaAttiva.DataFineInvio = New Date(Now.Year, Now.Month, Now.Day)
+        End If
+
+        'If (Me.comboStatoFatturaElettronica.SelectedValue <> "-1") Then
+        '    filtroFatturaAttiva.StatoConservazioneFattura = Me.comboStatoFatturaElettronica.SelectedValue
+        'End If
+
+        filtroFatturaAttiva.Inviati = Me.chkInviate.Checked
+        filtroFatturaAttiva.DaInviare = Me.chkDaInviare.Checked
+        filtroFatturaAttiva.Archiviati = Me.chkArchiviate.Checked
+
+        Return filtroFatturaAttiva
+
+    End Function
+
+    Protected Sub FiltraImageButton_Click(ByVal sender As Object, ByVal e As System.Web.UI.ImageClickEventArgs) Handles FiltraImageButton.Click
+        Dim filtro As ParsecPro.FiltroFatturaElettronicaAttiva = getFiltroFatturaAttiva()
+        Dim registroFattureAttiveRep As New ParsecPro.FatturaElettronicaAttivaRepository
+        Me.FattureElettronicheAttive = registroFattureAttiveRep.GetView(filtro)
+        registroFattureAttiveRep.Dispose()
+        Me.rgrdFattureEmesse.Rebind()
+    End Sub
+
+    Protected Sub AnnullaFiltroImageButton_Click(ByVal sender As Object, ByVal e As System.Web.UI.ImageClickEventArgs) Handles AnnullaFiltroImageButton.Click
+        Dim registroFattureAttiveRep As New ParsecPro.FatturaElettronicaAttivaRepository
+        Me.FattureElettronicheAttive = New List(Of ParsecPro.FatturaConservazioneAttiva)
+        Me.rgrdFattureEmesse.Rebind()
+        registroFattureAttiveRep.Dispose()
+        Me.ResettaFiltro()
+    End Sub
+
+    Private Function isFatturaConservabile(ByVal allegatoFattura As ParsecPro.Allegato) As Boolean
+        Try
+
+            Dim message As New Rebex.Mail.MailMessage
+            message.Settings.IgnoreInvalidTnefMessages = True
+            Dim innerMessage As Rebex.Mail.MailMessage = Nothing
+            Dim ms As IO.MemoryStream = Nothing
+
+            Dim NomeFileCompleto As String = allegatoFattura.Id.ToString.PadLeft(9, "0") & "_" & "1".PadLeft(4, "0") & "_" & allegatoFattura.NomeFile
+            Dim strDocPath = ParsecAdmin.WebConfigSettings.GetKey("PathDocumenti") + allegatoFattura.PercorsoRelativo + NomeFileCompleto
+
+            message.Load(strDocPath)
+
+            For Each att In message.Attachments
+                If att.FileName.ToLower.EndsWith(".eml") Then
+                    innerMessage = New Rebex.Mail.MailMessage
+                    innerMessage.Settings.IgnoreInvalidTnefMessages = True
+                    ms = New IO.MemoryStream
+                    att.Save(ms)
+                    ms.Position = 0
+                    innerMessage.Load(ms)
+
+                    For Each s In innerMessage.Attachments
+                        '******************************************************************************************************
+                        'SE L'ALLEGATO DELL'EMAIL E' UN FILE XML
+                        '******************************************************************************************************
+                        If s.FileName.ToLower.EndsWith(".xml") Then
+                            ms = New IO.MemoryStream
+                            s.Save(ms)
+                            ms.Position = 0
+
+                            Dim element As New XmlDocument
+                            element.Load(ms)
+                            ms.Position = 0
+
+                            Dim Esito = ""
+                            Esito = element.SelectSingleNode("//Esito").InnerText
+
+                            If (Esito.Equals("EC01")) Then
+                                Return True
+                            Else
+                                Return False
+                            End If
+
+                        End If
+                    Next
+                End If
+            Next
+            Return False
+
+        Catch ex As Exception
+            Throw New Exception(ex.Message)
+        End Try
+
+    End Function
+
+    Private Sub VisualizzaProtocollo(ByVal item As Telerik.Web.UI.GridDataItem)
+
+        Dim idRegistrazioneFattura As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("IdRegistrazione")
+        'Dim registrazioniRepository As New ParsecPro.RegistrazioniRepository
+        'Dim protocollo = registrazioniRepository.GetById(idRegistrazioneFattura)
+        Dim pageUrl As String = "~/UI/Protocollo/pages/search/VisualizzaRegistrazionePage.aspx"
+        Dim queryString As New Hashtable
+        Dim parametriPagina As New Hashtable
+        parametriPagina.Add("Filtro", idRegistrazioneFattura)
+        ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+
+        ParsecUtility.Utility.ShowPopup(pageUrl, 940, 510, queryString, False)
+
+    End Sub
+
+#End Region
+
+#Region "OPERAZIONI MASSIVE"
+
+    Protected Sub SincronizzaButton_Click(sender As Object, e As System.EventArgs) Handles SincronizzaButton.Click
+        Dim ProtocolloR As New ParsecPro.RegistrazioniRepository
+        Dim tipologieRicezione As New ParsecPro.TipiRicezioneInvioRepository(ProtocolloR.Context)
+        Dim FEARepository As New FatturaElettronicaAttivaRepository
+
+        Dim ElencoProtocolliFattureAttive As List(Of Registrazione)
+
+        Dim fatturaElement As XElement = Nothing
+        Dim element As XElement = Nothing
+
+        Dim dataIniziale As New Date
+        If (Me.DataInvioInizioTextBox.SelectedDate.HasValue) Then
+            'dataIniziale = Me.DataInvioInizioTextBox.SelectedDate
+            dataIniziale = New Date(Me.DataInvioInizioTextBox.SelectedDate.Value.Year, Me.DataInvioInizioTextBox.SelectedDate.Value.Month, Me.DataInvioInizioTextBox.SelectedDate.Value.Day, 0, 0, 0)
+        Else
+            dataIniziale = New Date(2015, 1, 1, 0, 0, 0)
+        End If
+
+        Dim dataFinale As New Date
+        If (Me.DataInvioFineTextBox.SelectedDate.HasValue) Then
+            'dataFinale = Me.DataInvioFineTextBox.SelectedDate
+            dataFinale = New Date(Me.DataInvioFineTextBox.SelectedDate.Value.Year, Me.DataInvioFineTextBox.SelectedDate.Value.Month, Me.DataInvioFineTextBox.SelectedDate.Value.Day, 23, 59, 59)
+        Else
+            dataFinale = New Date(Now.Year, Now.Month, Now.Day, 23, 59, 59)
+            'dataFinale = New Date(2015, 12, 31)
+        End If
+
+
+        'DA dove prendo l'anno???******************************************--------------------°°°°°°°°°°°°°°°
+
+        Dim parametri As New ParsecAdmin.ParametriRepository
+        Dim parametro As ParsecAdmin.Parametri = parametri.GetByName("DominioServizioSdI", ParsecAdmin.TipoModulo.PRO)
+        parametri.Dispose()
+
+        If Not parametro Is Nothing Then
+            Dim result = From registrazioni In ProtocolloR.GetQuery
+                         Join TipiRicezione In tipologieRicezione.GetQuery On registrazioni.IdTipoRicezione Equals TipiRicezione.Id
+                         Where registrazioni.TipoRegistrazione = TipoRegistrazione.Partenza _
+                                                   And registrazioni.IdTipoDocumento = 2 _
+                                                   And (TipiRicezione.Descrizione.ToLower = "pec" Or TipiRicezione.Descrizione.ToLower = "e-mail") _
+                                                   And registrazioni.Annullato = False _
+                                                   And registrazioni.DataOraRegistrazione >= dataIniziale _
+                                                   And registrazioni.DataOraRegistrazione <= dataFinale _
+                                                   And registrazioni.ElencoReferentiEsterni.Contains(parametro.Valore) _
+                                                   And registrazioni.Modificato = False
+                         Select registrazioni
+
+
+            ElencoProtocolliFattureAttive = result.ToList
+
+
+            Dim fattureAttiveRep As New ParsecPro.FatturaElettronicaAttivaRepository
+            Dim listaIdRegistrazioniGiàImportate = fattureAttiveRep.GetQuery.Select(Function(s) s.IdRegistrazione)
+
+            If listaIdRegistrazioniGiàImportate.Count > 0 Then
+                ElencoProtocolliFattureAttive = ElencoProtocolliFattureAttive.Where(Function(w) Not listaIdRegistrazioniGiàImportate.Contains(w.Id)).ToList
+            End If
+            fattureAttiveRep.Dispose()
+
+            Dim NumeroProtocollo As Integer = 0
+            Dim AnnoProtocollo As Integer = 0
+            Dim DataProtocollo As DateTime
+
+            Dim messaggioErrore As String = ""
+
+            For Each r In ElencoProtocolliFattureAttive
+
+                NumeroProtocollo = r.NumeroProtocollo
+                AnnoProtocollo = r.DataOraRegistrazione.Value.Year
+                DataProtocollo = r.DataOraRegistrazione
+
+                'VERIFICA SE UNA LA FATTURA CON QUEL PROTOCOLLO è GIà PRESENTE NELLA TABELLA DELLE FATTURE ATTIVE
+                'Dim Esiste = FEARepository.GetQuery.Where(Function(f) f.NumeroProtocollo = NumeroProtocollo And f.DataProtocollo.Value.Year = AnnoProtocollo).Count
+
+                'If Esiste = 0 Then
+                ProtocolloR.Registrazione = r
+                ProtocolloR.GetAllegati(r)
+
+                Dim allegatiDaAnalizzare = ProtocolloR.Registrazione.Allegati.Where(Function(w) w.Oggetto.ToLower.Contains("notifica di decorrenza termini") Or w.Oggetto.ToLower.Contains("notifica di scarto") Or w.Oggetto.ToLower.Contains("notifica di esito cedente/prestatore"))
+
+                Dim Allegatofattura = ProtocolloR.Registrazione.Allegati.Where(Function(a) a.IdTipologiaDocumento = 1).FirstOrDefault()
+
+                If allegatiDaAnalizzare.Count > 0 Then
+
+                    If Not Allegatofattura Is Nothing Then
+                        Dim NomeFileCompleto As String = Allegatofattura.Id.ToString.PadLeft(9, "0") & "_" & "1".PadLeft(4, "0") & "_" & Allegatofattura.NomeFile
+                        Dim strdocPath = ParsecAdmin.WebConfigSettings.GetKey("PathDocumenti") + Allegatofattura.PercorsoRelativo + NomeFileCompleto
+                        If IO.File.Exists(strdocPath) Then
+                            Dim bData As Byte()
+
+                            Dim br As BinaryReader = New BinaryReader(System.IO.File.OpenRead(strdocPath))
+                            bData = br.ReadBytes(br.BaseStream.Length)
+                            Dim ms As MemoryStream = New MemoryStream(bData, 0, bData.Length)
+                            ms.Write(bData, 0, bData.Length)
+
+                            ms.Position = 0
+
+                            If Allegatofattura.NomeFile.ToLower.EndsWith(".p7m") Then
+                                Dim buffer As Byte() = ms.ToArray
+                                Dim signedCms As New System.Security.Cryptography.Pkcs.SignedCms
+                                'SE IL CONTENUTO DEL FILE P7M E' CODIFICATO IN BASE64 LO DECODIFICO
+                                Try
+                                    buffer = System.Convert.FromBase64String(System.Text.ASCIIEncoding.Default.GetString(buffer))
+                                Catch ex As Exception
+                                    'NIENTE
+                                End Try
+                                signedCms.Decode(buffer)
+
+                                ms = ParsecUtility.Utility.FixVersioneXml(signedCms.ContentInfo.Content)
+                            Else
+                                ms = ParsecUtility.Utility.FixVersioneXml(ms.ToArray)
+                            End If
+
+                            Try
+                                element = XElement.Load(ms)
+                            Catch ex As Exception
+
+                            End Try
+
+                            fatturaElement = element
+
+                            Dim fatturaElettronicaAttiva As ParsecPro.FatturaElettronicaAttiva = Me.CaricaFattura(fatturaElement)
+
+                            fatturaElettronicaAttiva.IdStato = StatoFattura.Protocollata 'VERIFICARE se bisogna mettere un altro stato ACCETTATA o RIFIUTATA
+                            fatturaElettronicaAttiva.NumeroProtocollo = NumeroProtocollo
+                            fatturaElettronicaAttiva.DataProtocollo = DataProtocollo
+                            fatturaElettronicaAttiva.NomeFileFattura = Allegatofattura.NomeFile
+                            fatturaElettronicaAttiva.IdRegistrazione = r.Id
+                            'analizzo gli allegati per decidere se è conservabile o meno
+
+                            Dim allegatiConScarto = allegatiDaAnalizzare.Where(Function(w) w.Oggetto.ToLower.Contains("notifica di scarto"))
+                            Dim allegatiConDecorrenza = allegatiDaAnalizzare.Where(Function(w) w.Oggetto.ToLower.Contains("notifica di decorrenza termini"))
+                            Dim allegatiConCedentePrestatore = allegatiDaAnalizzare.Where(Function(w) w.Oggetto.ToLower.Contains("notifica di esito cedente/prestatore"))
+
+                            Dim isConservabileConCedentePrestatore As Nullable(Of Boolean)
+                            If (allegatiConCedentePrestatore.Count > 0) Then
+                                isConservabileConCedentePrestatore = isFatturaConservabile(allegatiConCedentePrestatore.FirstOrDefault)
+                            End If
+
+                            Dim casoAmbiguo As Boolean = False
+                            If ((allegatiConScarto.Count > 0 And allegatiConDecorrenza.Count > 0)) Then
+                                fatturaElettronicaAttiva.Conservabile = "NI"
+                                fatturaElettronicaAttiva.Note = "Attenzione: sono presenti sia la notifica di scarto che la decorrenza dei termini."
+                                casoAmbiguo = True
+                            Else
+                                If ((allegatiConScarto.Count > 0 And allegatiConCedentePrestatore.Count > 0)) Then
+                                    casoAmbiguo = True
+                                    If (isConservabileConCedentePrestatore) Then
+                                        fatturaElettronicaAttiva.Conservabile = "NI"
+                                        fatturaElettronicaAttiva.Note = "Attenzione: sono presenti sia la notifica di scarto del SdI che la accettazione del Committente."
+                                    Else
+                                        fatturaElettronicaAttiva.Conservabile = "NO"
+                                        fatturaElettronicaAttiva.Note = "Attenzione: sono presenti sia la notifica di scarto del SdI che il rifiuto del Committente."
+                                    End If
+                                Else
+                                    If ((allegatiConDecorrenza.Count > 0 And allegatiConCedentePrestatore.Count > 0)) Then
+                                        casoAmbiguo = True
+                                        If (isConservabileConCedentePrestatore) Then
+                                            fatturaElettronicaAttiva.Conservabile = "SI"
+                                            fatturaElettronicaAttiva.Note = "Attenzione: sono presenti sia la decorrenza dei termini che la accettazione del Committente."
+                                        Else
+                                            fatturaElettronicaAttiva.Conservabile = "NI"
+                                            fatturaElettronicaAttiva.Note = "Attenzione: sono presenti sia la decorrenza dei termini che lo scarto del Committente."
+                                        End If
+                                    End If
+                                End If
+                            End If
+
+                            If (Not casoAmbiguo) Then
+                                If (allegatiConScarto.Count > 0) Then
+                                    fatturaElettronicaAttiva.Conservabile = "NO"
+                                    fatturaElettronicaAttiva.Note = "Presente la notifica di scarto del SdI."
+                                ElseIf (allegatiConDecorrenza.Count > 0) Then
+                                    fatturaElettronicaAttiva.Conservabile = "DT"
+                                    fatturaElettronicaAttiva.Note = "Presente la notifica di decorrenza dei termini."
+                                ElseIf (isConservabileConCedentePrestatore = True) Then
+                                    fatturaElettronicaAttiva.Conservabile = "AC"
+                                    fatturaElettronicaAttiva.Note = "Presente la notifica di accettazione del Committente."
+                                ElseIf (isConservabileConCedentePrestatore = False) Then
+                                    fatturaElettronicaAttiva.Conservabile = "NO"
+                                    fatturaElettronicaAttiva.Note = "Presente la notifica di rifiuto del Committente."
+
+                                End If
+                            End If
+
+
+                            Try
+                                FEARepository.Add(fatturaElettronicaAttiva)
+                                FEARepository.SaveChanges()
+
+                                '***********************************************************************************************
+                                'SALVA LA FATTURA NELLA CARTELLA DELLE FATTURE
+
+                                Dim FatturaElettronicaPath = ParsecAdmin.WebConfigSettings.GetKey("PathFattureElettroniche") + Allegatofattura.PercorsoRelativo + Allegatofattura.NomeFile
+                                Dim objfilestream As New FileStream(FatturaElettronicaPath, FileMode.Create, FileAccess.ReadWrite)
+                                objfilestream.Write(bData, 0, bData.Length)
+                                objfilestream.Close()
+                                '***********************************************************************************************
+                            Catch ex As Exception
+
+                            End Try
+                        Else
+                            messaggioErrore = messaggioErrore & strdocPath & " & non trovato" & "" & vbCrLf
+                        End If
+
+                    End If
+                End If
+
+            Next
+            If messaggioErrore <> "" Then
+                ParsecUtility.Utility.MessageBox(messaggioErrore, False)
+                Exit Sub
+            End If
+            Dim filtro As ParsecPro.FiltroFatturaElettronicaAttiva = getFiltroFatturaAttiva()
+            Dim registroFattureAttiveRep As New ParsecPro.FatturaElettronicaAttivaRepository
+            Me.FattureElettronicheAttive = registroFattureAttiveRep.GetView(filtro)
+            registroFattureAttiveRep.Dispose()
+            Me.rgrdFattureEmesse.Rebind()
+
+            ParsecUtility.Utility.MessageBox("Procedura di Sincronizzazione avvenuta con successo.", False)
+        Else
+
+        End If
+
+    End Sub
+
+    Protected Sub InviaButton_Click(sender As Object, e As System.EventArgs) Handles InviaButton.Click
+
+        Dim moduloRepository As New ParsecAdmin.ModuleRepository
+        Dim modulo = moduloRepository.GetAbilitazioniModuli().Where(Function(w) w.Id = ParsecAdmin.TipoModulo.CSZ).FirstOrDefault
+        If (modulo Is Nothing) Then
+            ParsecUtility.Utility.MessageBox("Attenzione: il Modulo della Archiviazione Documentale non è abilitato! Contattatare l'Amministratore del Sistema!", False)
+            Exit Sub
+        End If
+
+        Dim ws As New wsConservazione.wsConservazione
+        Try
+            Dim soapRequestListaDocmneuntiGestiti As New wsConservazione.SoapGetListaTipiDocumentoRequest
+            soapRequestListaDocmneuntiGestiti.codiceLicenza = Me.Cliente.CodLicenza
+            Dim tipiDocumentiGestiti = ws.getTipiDocumentoGestiti(soapRequestListaDocmneuntiGestiti)
+            If (tipiDocumentiGestiti.messaggioErrore <> "") Then
+                Throw New Exception(tipiDocumentiGestiti.messaggioErrore)
+            End If
+        Catch ex As Exception
+            ParsecUtility.Utility.MessageBox(ex.Message, False)
+            Exit Sub
+        End Try
+
+        Dim getEnteSoapRequest As New wsConservazione.SoapGetEnteConservatoreRequest
+        getEnteSoapRequest.codiceLicenza = Cliente.CodLicenza
+        Dim enteConservatoreAttivo = ws.getEnteConservatoreAttivo(getEnteSoapRequest)
+        If (enteConservatoreAttivo.messaggioErrore <> String.Empty) Then
+            ParsecUtility.Utility.MessageBox(enteConservatoreAttivo.messaggioErrore, False)
+            Exit Sub
+        End If
+
+        Dim count = Me.rgrdFattureEmesse.SelectedItems.Count
+        Dim context = RadProgressContext.Current
+        context.PrimaryTotal = count.ToString
+        Dim i As Integer = 0
+
+        Dim fattureR As New ParsecPro.FatturaElettronicaAttivaRepository
+
+        Dim listaMessaggiErrore As New System.Text.StringBuilder
+
+        For Each selectedItem As GridDataItem In Me.rgrdFattureEmesse.SelectedItems
+
+            i += 1
+            context.PrimaryValue = i.ToString
+
+            Dim percentCompleted = CInt((0.5F + ((100.0F * i) / count)))
+
+            context.PrimaryPercent = percentCompleted.ToString
+
+            If Not Response.IsClientConnected Then
+                Exit For
+            End If
+
+            Try
+                Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+                Dim idSelezionato As Integer = selectedItem.OwnerTableView.DataKeyValues(selectedItem.ItemIndex)("Id")
+                Dim fatturaAttiva = fattureR.GetById(idSelezionato)
+
+                Dim metaDatoFattura As New wsConservazione.MetaDatoFattura
+
+                metaDatoFattura.DataDocumento = fatturaAttiva.DataFattura
+                metaDatoFattura.FileName = fatturaAttiva.NomeFileFattura
+                metaDatoFattura.Informazioni = fatturaAttiva.Oggetto
+                metaDatoFattura.NumeroDocumento = fatturaAttiva.NumeroFattura
+                metaDatoFattura.Oggetto = fatturaAttiva.Oggetto
+                metaDatoFattura.TipoDocumento = "FATTURAELETTRONICA"
+                metaDatoFattura.SoggettoProduttoreDocumento = utenteCollegato.Cognome + ", " + utenteCollegato.Nome + If(utenteCollegato.CodiceFiscale <> "", ", " + utenteCollegato.CodiceFiscale, "")
+                metaDatoFattura.codiceDocumento = fatturaAttiva.TipologiaDocumento
+                metaDatoFattura.tipologiaFattura = "ATTIVA"
+                metaDatoFattura.DataProtocollo = fatturaAttiva.DataProtocollo
+                metaDatoFattura.NumeroProtocollo = fatturaAttiva.NumeroProtocollo
+                metaDatoFattura.partitaIVACedentePrestatore = Me.Cliente.PIVA '"07026760723" 'prendere da tCliente
+                metaDatoFattura.cedentePrestatoreFattura = Me.Cliente.Descrizione '"ARIF - Regione Puglia" ''prendere da tCliente
+                metaDatoFattura.codicePaeseCedente = "IT"
+                metaDatoFattura.codicePaeseCessionario = "IT"
+                metaDatoFattura.partitaIvaCessionarioCommittente = fatturaAttiva.PIVACliente
+                metaDatoFattura.cessionarioCommittente = fatturaAttiva.DenominazioneCliente
+                metaDatoFattura.valuta = "EUR"
+                metaDatoFattura.totaleFattura = fatturaAttiva.TotaleFattura
+                metaDatoFattura.DataChiusura = Now
+                metaDatoFattura.idModuloSep = ParsecAdmin.TipoModulo.PRO
+                metaDatoFattura.idDocumentoSep = fatturaAttiva.Id
+
+                Dim strdocPath = ParsecAdmin.WebConfigSettings.GetKey("PathFattureElettroniche") + fatturaAttiva.DataFattura.Value.Year.ToString + "/" + fatturaAttiva.NomeFileFattura
+
+                'Dim bData As Byte()
+                'Dim br As BinaryReader = New BinaryReader(System.IO.File.OpenRead(strdocPath))
+                'bData = br.ReadBytes(br.BaseStream.Length)
+
+                Dim FatturaAttivaRequest As New wsConservazione.SoapConservaFatturaRequest
+
+                FatturaAttivaRequest.codiceLicenza = Cliente.CodLicenza '"669efeec" 'prendere da tCliente
+                FatturaAttivaRequest.metaDatoFattura = metaDatoFattura
+                'FatturaAttivaRequest.file = bData
+
+                Dim fileByte = IO.File.ReadAllBytes(strdocPath)
+                Select Case enteConservatoreAttivo.ListaEntiConservatori(0).algoritmoImpronta.ToUpper
+                    Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                        'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                        'metaDatoFattura.AlgoritmoImpronta = ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA_1
+                        metaDatoFattura.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByte)
+                        'metaDatoFattura.Impronta = BitConverter.ToString(metaDatoFattura.ImprontaFile).Replace("-", "")
+
+                        'allegato.Impronta = ParsecUtility.Utility.CalcolaHash(pathDownload)
+                        'allegato.ImprontaEsadecimale = BitConverter.ToString(allegato.Impronta).Replace("-", "")
+                        'Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA_256
+                        'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                    Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA256
+                        'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                        'metaDatoFattura.AlgoritmoImpronta = ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA_256
+                        metaDatoFattura.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByte)
+                        'metaDatoFattura.Impronta = BitConverter.ToString(metaDatoFattura.ImprontaFile).Replace("-", "")
+                    Case Else
+                        'ParsecCSD.Log4NetSetupLivello.SetupLivelloLog(Log)
+                        'Log.Warn("calcoloImpronta():  non riscontrato alcun Ente Conservatore tra quelli ammessi!")
+                        'Return Nothing
+                        Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+                End Select
+                metaDatoFattura.AlgoritmoImpronta = enteConservatoreAttivo.ListaEntiConservatori(0).algoritmoImpronta.ToUpper
+
+                FatturaAttivaRequest.file = Nothing
+                FatturaAttivaRequest.sourcePath = strdocPath
+
+                Dim Response = ws.conservaFatturaOrNotifica(FatturaAttivaRequest)
+                If Response.messaggioErrore = "" Then
+                    fatturaAttiva.IdDocumentoWS = Response.ListaDocumentiBase(0).idDocumento
+                    fattureR.Save(fatturaAttiva)
+                Else
+                    listaMessaggiErrore.Append(Response.messaggioErrore)
+                End If
+            Catch ex As Exception
+                listaMessaggiErrore.Append(ex.Message)
+            End Try
+
+
+        Next
+        context.OperationComplete = True
+
+        Me.FattureElettronicheAttive = fattureR.GetView(getFiltroFatturaAttiva())
+        Me.rgrdFattureEmesse.Rebind()
+
+        fattureR.Dispose()
+
+        Me.rgrdFattureEmesse.Rebind()
+
+        If (listaMessaggiErrore.Length > 0) Then
+            ParsecUtility.Utility.MessageBox("Riscontrati i seguenti problemi: " & vbCrLf & listaMessaggiErrore.ToString, False)
+        Else
+            ParsecUtility.Utility.MessageBox("Fatture Elettroniche inviate con successo al Modulo Archivio.", False)
+        End If
+
+    End Sub
+
+#End Region
+
+End Class

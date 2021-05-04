@@ -1,0 +1,587 @@
+﻿<%@ Page Title="" Language="VB" MasterPageFile="~/MainPage.master" AutoEventWireup="false" CodeFile="GestioneProtocollazioneMassivaJSibacPage.aspx.vb" Inherits="GestioneProtocollazioneMassivaJSibacPage" %>
+
+<%@ Register Assembly="Telerik.Web.UI" Namespace="Telerik.Web.UI" TagPrefix="telerik" %>
+
+<%--SPDX-License-Identifier: GPL-3.0-only--%>
+
+<asp:Content ID="Content1" ContentPlaceHolderID="MainContent" runat="Server">
+    <script type="text/javascript">
+
+        var _backgroundElement = document.createElement("div");
+        var messageBox = document.createElement('div');
+        var messageBoxPanel = document.createElement('div');
+        var overlay = document.createElement("div");
+
+        var hideEditPanel = true;
+
+        function pageLoad() {
+            var manager = Sys.WebForms.PageRequestManager.getInstance();
+            manager.add_beginRequest(OnBeginRequest);
+            manager.add_endRequest(OnEndRequest);
+            $get("pageContent").appendChild(_backgroundElement);
+            $get("pageContent").appendChild(overlay);
+
+
+            if (hideEditPanel) {
+                HideEditEmailPanel();
+
+            } else {
+                ShowEditEmailPanel();
+            }
+
+        }
+
+
+        function OnBeginRequest(sender, args) {
+            EnableUI(false);
+        }
+
+
+        function OnEndRequest(sender, args) {
+            count = 2;
+            var message = $get('<%= infoOperazioneHidden.ClientId %>').value;
+
+            if (message !== '') {
+
+                //VISUALIZZO IL MESSAGGIO
+
+                ShowMessageBox(message);
+
+                var intervallo = setInterval(function () {
+                    count = count - 1;
+                    if (count <= 0) {
+                        HideMessageBox();
+                        EnableUI(true);
+                        clearInterval(intervallo);
+
+                    }
+                }, 1000);
+
+
+
+                $get('<%= infoOperazioneHidden.ClientId %>').value = '';
+
+            } else { EnableUI(true); }
+        }
+
+        function EnableUI(state) {
+            if (!state) {
+                _backgroundElement.style.display = '';
+                _backgroundElement.style.position = 'absolute';
+                _backgroundElement.style.left = '0px';
+                _backgroundElement.style.top = '0px';
+
+                _backgroundElement.style.width = '100%';
+                _backgroundElement.style.height = '100%';
+
+                _backgroundElement.style.zIndex = 10000;
+
+                _backgroundElement.style.backgroundColor = '#09718F';
+                _backgroundElement.style.filter = "alpha(opacity=20)";
+                _backgroundElement.style.opacity = "0.2";
+            }
+            else {
+                _backgroundElement.style.display = 'none';
+
+            }
+        }
+
+
+        function ShowMessageBox(message) {
+
+
+            this.document.body.appendChild(messageBox);
+            this.document.body.appendChild(messageBoxPanel);
+
+            with (messageBoxPanel) {
+                style.display = '';
+                style.position = 'absolute';
+                style.left = '0px';
+                style.top = '0px';
+                style.width = '100%';
+                style.height = '100%';
+                style.zIndex = 10000;
+                style.backgroundColor = '#09718F';
+                style.filter = "alpha(opacity=20)";
+                style.opacity = "0.2";
+            }
+
+            with (messageBox) {
+                style.width = '300px';
+                style.height = '40px';
+                style.backgroundColor = '#BFDBFF';
+                style.border = 'solid #4892FF 2px';
+                style.position = 'absolute';
+                style.left = '0px';
+                style.top = '0px';
+                style.zIndex = 10000;
+                innerHTML = message;
+                style.color = '#00156E';
+                style.backgroundImage = 'url(/sep/Images/success.png)';
+                style.backgroundPosition = '10px center';
+                style.backgroundRepeat = 'no-repeat';
+                style.padding = '15px 10px 15px 50px';
+                style.margin = '15px 0px';
+            }
+
+
+            xc = Math.round((document.body.clientWidth / 2) - (300 / 2));
+            yc = Math.round((document.body.clientHeight / 2) - (40 / 2));
+
+
+            messageBox.style.left = xc + "px";
+            messageBox.style.top = yc + "px";
+            messageBox.style.display = 'block';
+
+
+
+        }
+
+        function HideMessageBox() {
+            try {
+                messageBox.style.display = 'none';
+                messageBoxPanel.style.display = 'none';
+            }
+            catch (e) { }
+        }
+
+        function updating(sender, args) {
+            var d = $get("progressBar");
+            d.style.display = '';
+            if (args.get_progressData() && args.get_progressData().OperationComplete == 'true') {
+                args.set_cancel(true);
+                d.style.display = 'none';
+            }
+        }
+
+        function HideEditEmailPanel() {
+            var panel = document.getElementById("EditEmailPanel");
+            panel.style.display = "none";
+            overlay.style.display = 'none';
+            _backgroundElement.style.display = 'none';
+        }
+
+        function ShowEditEmailPanel() {
+            overlay.style.display = '';
+            var panel = document.getElementById("EditEmailPanel");
+            panel.style.display = '';
+            panel.style.position = 'absolute';
+            overlay.style.position = 'absolute';
+            overlay.style.left = '0px';
+            overlay.style.top = '0px';
+            overlay.style.width = '100%';
+            overlay.style.height = '100%';
+            overlay.style.zIndex = 10000;
+            overlay.style.backgroundColor = '#09718F';
+            overlay.style.filter = "alpha(opacity=20)";
+            overlay.style.opacity = "0.2";
+
+            var shadow = document.getElementById("EditEmailShadowPanel");
+
+            with (shadow) {
+                style.msFilter = "progid:DXImageTransform.Microsoft.Shadow(Strength=4, Direction=135, Color='#333333')";
+                style.filter = "progid:DXImageTransform.Microsoft.Shadow(Strength=4, Direction=135, Color='#333333')";
+                style.boxShadow = "3px 3px 4px #333";
+                style.mozBoxShadow = "3px 3px 4px #333";
+                style.webkitBoxShadow = "3px 3px 4px #333";
+            }
+
+        }
+
+    </script>
+    <asp:UpdateProgress runat="server" ID="UpdateProgress1" DisplayAfter="0">
+        <ProgressTemplate>
+            <div id="loadingOuter" style="position: absolute; width: 100%; text-align: center;
+                top: 300px; z-index: 2000000">
+                <table cellpadding="4" style="background-color: #4892FF; margin: 0 auto">
+                    <tr>
+                        <td>
+                            <div id="loadingInner" style="width: 300px; text-align: center; background-color: #BFDBFF;
+                                height: 60px">
+                                <span style="color: #00156E">Attendere prego ... </span>
+                                <br />
+                                <br />
+                                <img alt="" src="../../../../images/loading.gif" border="0">
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <div id="progressBar" style="position: absolute; width: 100%; text-align: center;
+                top: 300px; z-index: 2000000">
+                <div id="Div3" style="width: 310px; text-align: center; background-color: #BFDBFF;
+                    margin: 0 auto">
+                    <telerik:RadProgressArea OnClientProgressUpdating="updating" Skin="Office2007" ID="RadProgressArea1"
+                        runat="server" ProgressIndicators="RequestSize,TotalProgressPercent,TotalProgressBar"
+                        HeaderText="Elaborazione in corso ...">
+                        <Localization Total="Totale:" Uploaded="Completato:" />
+                    </telerik:RadProgressArea>
+                </div>
+            </div>
+        </ProgressTemplate>
+    </asp:UpdateProgress>
+    <asp:UpdatePanel ID="Pannello" runat="server">
+        <ContentTemplate>
+            <div id="pageContent">
+                <center>
+                    <telerik:RadProgressManager ID="Radprogressmanager1" runat="server" Skin="Office2007" />
+                    <table width="900px" cellpadding="5" cellspacing="5" border="0">
+                        <tr>
+                            <td>
+                                <table class="ContainerWrapper" border="0" cellpadding="2" cellspacing="0" width="100%">
+                                    <%--  HEADER--%>
+                                    <tr>
+                                        <td style="background-color: #BFDBFF; padding: 2px; border-bottom: 1px solid  #9ABBE8;
+                                            border-top: 1px solid  #9ABBE8">
+                                            <table style="width: 100%">
+                                                <tr>
+                                                    <td>
+                                                        &nbsp;<asp:Label ID="TitoloLabel" runat="server" Font-Bold="True" Style="color: #00156E;
+                                                            background-color: #BFDBFF" Text="Protocollazione Massiva" />
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                    <%-- CONTENT--%>
+                                    <tr>
+                                        <td class="ContainerMargin">
+                                            <table class="Container" cellpadding="0" cellspacing="4" width="100%" border="0">
+                                                <tr>
+                                                    <td>
+                                                        <div style="overflow: auto; height: 100%; width: 100%; background-color: #DFE8F6;
+                                                            border: 0px solid #5D8CC9;">
+                                                            <table style="width: 100%">
+                                                                <tr>
+                                                                    <td>
+                                                                        <table style="width: 100%">
+                                                                            <tr>
+                                                                                <td>
+                                                                                    <asp:Label ID="MittenteLabel" runat="server" CssClass="Etichetta" Text="Mittente *" />
+                                                                                </td>
+                                                                            </tr>
+                                                                            <tr>
+                                                                                <td>
+                                                                                    <table style="width: 100%">
+                                                                                        <tr>
+                                                                                            <td>
+                                                                                                <span style="border-color: #abc1de; background: #fff; color: #000; font: 12px 'segoe ui',arial,sans-serif;
+                                                                                                    border-width: 1px; border-style: solid; padding: 2px 1px 0px; width: 100%; height: 19px">
+                                                                                                    <asp:Label ID="SettoreTextBox" Style="color: #000; font: 12px 'segoe ui',arial,sans-serif;"
+                                                                                                        runat="server" Width="100%" ToolTip="Nominativo del mittente interno">&nbsp;</asp:Label>
+                                                                                                </span>
+                                                                                            </td>
+                                                                                            <td align="right" style="width: 60px">
+                                                                                                <asp:ImageButton ID="TrovaSettoreImageButton" runat="server" ImageUrl="~/images//knob-search16.png"
+                                                                                                    ToolTip="Seleziona mittente interno..." ImageAlign="AbsMiddle" />&nbsp;
+                                                                                                <asp:ImageButton ID="EliminaSettoreImageButton" runat="server" ImageUrl="~/images//RecycleEmpty.png"
+                                                                                                    ToolTip="Cancella mittente interno" ImageAlign="AbsMiddle" />&nbsp;
+                                                                                                <asp:ImageButton ID="AggiornaSettoreImageButton" runat="server" ImageUrl="~/images//knob-search16.png"
+                                                                                                    Style="display: none" />
+                                                                                                <telerik:RadTextBox ID="IdSettoreTextBox" runat="server" Skin="Office2007" Width="0px"
+                                                                                                    Style="display: none" />
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    </table>
+                                                                                </td>
+                                                                            </tr>
+                                                                        </table>
+                                                                    </td>
+                                                                </tr>
+                                                                <tr>
+                                                                    <td>
+                                                                        <table style="width: 100%">
+                                                                            <tr>
+                                                                                <td>
+                                                                                    <asp:Label ID="OggettoLabel" runat="server" CssClass="Etichetta" Text="Oggetto *" />
+                                                                                </td>
+                                                                            </tr>
+                                                                            <tr>
+                                                                                <td>
+                                                                                    <telerik:RadTextBox ID="OggettoTextBox" runat="server" Skin="Office2007" Width="100%"
+                                                                                        MaxLength="1000" TextMode="MultiLine" ToolTip="Oggetto del protocollo" />
+                                                                                </td>
+                                                                            </tr>
+                                                                        </table>
+                                                                    </td>
+                                                                </tr>
+                                                            </table>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                            <%-- INIZIO TABELLA OPZIONI--%>
+                                            <table class="Container" cellpadding="0" cellspacing="4" width="100%" border="0">
+                                                <tr>
+                                                    <td>
+                                                        <table style="width: 100%; background-color: #BFDBFF; border: 1px solid #5D8CC9">
+                                                            <%-- HEADER--%>
+                                                            <tr>
+                                                                <td valign="top">
+                                                                    <table style="width: 100%; background-color: #BFDBFF">
+                                                                        <tr>
+                                                                            <td>
+                                                                                &nbsp;<asp:Label ID="DatiEmailLabel" runat="server" Font-Bold="True" Style="width: 500px;
+                                                                                    color: #00156E; background-color: #BFDBFF" Text="Dati E-mail" />
+                                                                            </td>
+                                                                        </tr>
+                                                                    </table>
+                                                                </td>
+                                                            </tr>
+                                                            <%--  CONTENT--%>
+                                                            <tr style="background-color: #DFE8F6">
+                                                                <td valign="top">
+                                                                    <div style="overflow: auto; height: 100%; width: 100%; background-color: #DFE8F6;
+                                                                        border: 0px solid #5D8CC9;">
+                                                                        <table style="width: 100%; border: 1px solid #5D8CC9; height: 100%">
+                                                                            <tr>
+                                                                                <td>
+                                                                                    <table style="width: 100%">
+                                                                                        <tr>
+                                                                                            <td>
+                                                                                                <asp:Label ID="CasellaLabel" runat="server" CssClass="Etichetta" Text="Casella *" />
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                        <tr>
+                                                                                            <td>
+                                                                                                <telerik:RadComboBox ID="CaselleEmailComboBox" runat="server" Skin="Office2007" Width="330px"
+                                                                                                    EmptyMessage="Selezionare Mittente" ItemsPerRequest="10" Filter="StartsWith"
+                                                                                                    NoWrap="True" MaxHeight="400px" TabIndex="1" AutoPostBack="true" />
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    </table>
+                                                                                </td>
+                                                                            </tr>
+                                                                            <tr>
+                                                                                <td>
+                                                                                    <table style="width: 100%">
+                                                                                        <tr>
+                                                                                            <td>
+                                                                                                <asp:Label ID="OggettoEmailLabel" runat="server" CssClass="Etichetta" Text="Oggetto *" />
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                        <tr>
+                                                                                            <td>
+                                                                                                <telerik:RadTextBox ID="OggettoEmailTextBox" runat="server" Skin="Office2007" Width="100%"
+                                                                                                    ToolTip="Oggetto dell'e-mail" />
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    </table>
+                                                                                </td>
+                                                                            </tr>
+                                                                            <tr>
+                                                                                <td>
+                                                                                    <table style="width: 100%">
+                                                                                        <tr>
+                                                                                            <td>
+                                                                                                <asp:Label ID="CorpoLabel" runat="server" CssClass="Etichetta" Text="Corpo *" />
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                        <tr>
+                                                                                            <td>
+                                                                                                <telerik:RadTextBox ID="CorpoTextBox" runat="server" Skin="Office2007" Width="100%"
+                                                                                                    MaxLength="1000" TextMode="MultiLine" ToolTip="Corpo dell'e-mail" />
+                                                                                            </td>
+                                                                                        </tr>
+                                                                                    </table>
+                                                                                </td>
+                                                                            </tr>
+                                                                        </table>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        </table>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                            <%-- FINE TABELLA OPZIONI--%>
+                                            <div id="GrigliaDocumentiPanel" runat="server" style="padding: 2px 0px 0px 0px;">
+                                                <table style="width: 100%; background-color: #BFDBFF; border: 1px solid #5D8CC9">
+                                                    <tr>
+                                                        <td style="height: 20px">
+                                                            <table style="width: 100%">
+                                                                <tr>
+                                                                    <td>
+                                                                        <asp:Label ID="ProtocolliLabel" runat="server" CssClass="Etichetta" Font-Bold="True"
+                                                                            Style="width: 700px; color: #00156E; background-color: #BFDBFF" Text="Protocolli Partenza" />
+                                                                    </td>
+                                                                </tr>
+                                                            </table>
+                                                        </td>
+                                                    </tr>
+                                                    <tr style="background-color: #FFFFFF">
+                                                        <td>
+                                                            <div id="scrollPanelProtocolli" runat="server" style="overflow: auto; height: 300px;
+                                                                border: 1px solid #5D8CC9">
+                                                                <telerik:RadGrid ID="ProtocolliGridView" runat="server" ToolTip="Elenco Protocolli Partenza"
+                                                                    AutoGenerateColumns="False" CellSpacing="0" GridLines="None" Skin="Office2007"
+                                                                    Width="99.8%" Culture="it-IT">
+                                                                    <MasterTableView DataKeyNames="CodiceIstat,IdProtocollo">
+                                                                        <Columns>
+                                                                            <telerik:GridButtonColumn ButtonType="ImageButton" CommandName="Stato" ImageUrl="~\images\knob-search16.png"
+                                                                                UniqueName="Stato" HeaderTooltip="Stato Caricamento" HeaderStyle-Width="20px"
+                                                                                ItemStyle-Width="20px" />
+                                                                            <telerik:GridBoundColumn DataField="CodiceIstat" FilterControlAltText="Filter CodiceIstat column"
+                                                                                HeaderText="CodiceIstat" ReadOnly="True" SortExpression="CodiceIstat" UniqueName="CodiceIstat"
+                                                                                Visible="False" />
+                                                                            <telerik:GridTemplateColumn SortExpression="Comune" UniqueName="Comune" HeaderText="Destinatario"
+                                                                                DataField="Comune" HeaderStyle-Width="280px" ItemStyle-Width="280px">
+                                                                                <ItemTemplate>
+                                                                                    <div title='<%# Eval("Comune")%>' style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                                                                                        width: 280px;">
+                                                                                        <%# Eval("Comune")%></div>
+                                                                                </ItemTemplate>
+                                                                            </telerik:GridTemplateColumn>
+                                                                            <telerik:GridTemplateColumn SortExpression="Email" UniqueName="Email" HeaderText="Email"
+                                                                                DataField="Email">
+                                                                                <ItemTemplate>
+                                                                                    <div title='<%# Eval("Email")%>' style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                                                                        <%# Eval("Email")%></div>
+                                                                                </ItemTemplate>
+                                                                            </telerik:GridTemplateColumn>
+                                                                            <telerik:GridButtonColumn ButtonType="ImageButton" CommandName="StatoProtocollazione"
+                                                                                ImageUrl="~\images\knob-search16.png" UniqueName="StatoProtocollazione" HeaderTooltip="Stato Elaborazione"
+                                                                                HeaderStyle-Width="20px" ItemStyle-Width="20px" />
+                                                                            <telerik:GridButtonColumn ButtonType="ImageButton" CommandName="Preview" FilterControlAltText="Filter Preview column"
+                                                                                ImageUrl="~\images\knob-search16.png" UniqueName="Preview" HeaderStyle-Width="20px"
+                                                                                HeaderTooltip="Visualizza Protocollo" ItemStyle-Width="20px" />
+                                                                            <telerik:GridButtonColumn ButtonType="ImageButton" CommandName="Modifica" HeaderStyle-Width="20px"
+                                                                                Text="Modifica E-mail..." ItemStyle-Width="20px" FilterControlAltText="Filter Modifica column"
+                                                                                ImageUrl="~\images\edit16.png" UniqueName="Modifica" />
+                                                                        </Columns>
+                                                                    </MasterTableView>
+                                                                </telerik:RadGrid>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </table>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <%--FOOTER--%>
+                                    <tr>
+                                        <td align="center" style="background-color: #BFDBFF; padding: 4px; border-bottom: 0px solid  #9ABBE8;
+                                            border-top: 1px solid  #9ABBE8; height: 25px">
+                                            <telerik:RadButton ID="CaricaButton" runat="server" Text="Carica" Width="120px" Skin="Office2007"
+                                                ToolTip="Effettua il caricamento delle informazioni necessarie per la protocollazione massiva">
+                                                <Icon PrimaryIconUrl="../../../../images/refresh.png" PrimaryIconLeft="5px" />
+                                            </telerik:RadButton>
+                                            &nbsp;
+                                            <telerik:RadButton ID="ProtocollaButton" runat="server" Text="Protocolla" Width="120px"
+                                                Skin="Office2007" ToolTip="Effettua la protocollazione massiva">
+                                                <Icon PrimaryIconUrl="../../../../images/Processa.png" PrimaryIconLeft="5px" />
+                                            </telerik:RadButton>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+                    <table style="width: 900px; border: 1px solid #9ABBE8; text-align: center">
+                        <tr>
+                            <td>
+                                <table>
+                                    <tr>
+                                        <td>
+                                            <asp:Label ID="LegendaLabel" runat="server" CssClass="Etichetta" Text="Legenda :"
+                                                Font-Bold="True" ForeColor="#FF9900" Width="120px" />
+                                        </td>
+                                        <td>
+                                            <img alt="" src="../../../../Images/pVerde16.png" style="vertical-align: middle" />
+                                            <asp:Label ID="LegendaInviataNonImpacchettata" runat="server" CssClass="Etichetta"
+                                                Style="text-align: center" Text="Protocollabile" Width="110px" />
+                                        </td>
+                                        <td>
+                                            <img alt="" src="../../../../Images/pRosso16.png" style="vertical-align: middle" />
+                                            <asp:Label ID="LegendaInviataImpacchettata" runat="server" CssClass="Etichetta" Style="text-align: center"
+                                                Text="Non Protocollabile" Width="150px" />
+                                        </td>
+                                        <td>
+                                            <img alt="" src="../../../../Images/Successo16.png" style="vertical-align: middle" />
+                                            <asp:Label ID="Label1" runat="server" CssClass="Etichetta" Style="text-align: center"
+                                                Text="Elaborata" Width="90px" />
+                                        </td>
+                                        <td>
+                                            <img alt="" src="../../../../Images/Alert16.png" style="vertical-align: middle" />
+                                            <asp:Label ID="Label2" runat="server" CssClass="Etichetta" Style="text-align: center"
+                                                Text="Errore" Width="60px" />
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+                </center>
+            </div>
+            <div style="display: none">
+                <asp:Button runat="server" ID="notificaOperazioneButton" Style="width: 0px; height: 0px;
+                    left: -1000px; position: absolute" />
+            </div>
+            <asp:HiddenField ID="infoOperazioneHidden" runat="server" />
+            <asp:HiddenField ID="scrollPosHiddenProtocolli" runat="server" Value="0" />
+            <div id="EditEmailPanel" style="position: absolute; width: 100%; text-align: center;
+                z-index: 2000000; display: none; top: 100px">
+                <div id="EditEmailShadowPanel" style="width: 660px; text-align: center; background-color: #BFDBFF;
+                    margin: 0 auto">
+                    <table width="660px" cellpadding="5" cellspacing="5" border="0">
+                        <tr>
+                            <td>
+                                <table border="0" cellpadding="2" cellspacing="0" width="100%">
+                                    <%--  HEADER--%>
+                                    <tr>
+                                        <td style="background-color: #BFDBFF; padding: 0px; height: 25px">
+                                            <table style="width: 100%">
+                                                <tr>
+                                                    <td>
+                                                        &nbsp;<asp:Label ID="TitoloPannelloUploadLabel" runat="server" CssClass="Etichetta"
+                                                            Font-Bold="True" Style="width: 500px; color: #00156E; background-color: #BFDBFF"
+                                                            Text="Modifica E-mail" />
+                                                    </td>
+                                                    <td align="right">
+                                                        <img alt="Chiudi" src="../../../../images/Close.png" style="border: 0px" onclick="HideEditEmailPanel();document.getElementById('<%= Me.ChiudiEditPanelButton.ClientID %>').click();" />
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                    <%-- BODY--%>
+                                    <tr>
+                                        <td class="ContainerMargin">
+                                            <table class="Container" cellpadding="0" cellspacing="4" width="100%" border="0">
+                                                <tr>
+                                                    <td style="width: 80px">
+                                                        <asp:Label ID="ModificaEmailLabel" runat="server" CssClass="Etichetta" Text="E-mail" />
+                                                    </td>
+                                                    <td>
+                                                        <telerik:RadTextBox ID="ModificaEmailTextBox" runat="server" Skin="Office2007" Width="100%" />
+                                                        <asp:HiddenField ID="CodiceIstatHiddenField" runat="server" />
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                        <%-- FOOTER--%>
+                        <tr>
+                            <td align="center" style="background-color: #BFDBFF; padding: 4px; border-bottom: 0px solid  #9ABBE8;
+                                border-top: 1px solid  #9ABBE8; height: 25px">
+                                &nbsp;
+                                <telerik:RadButton ID="ChiudiEditPanelButton" runat="server" Text="Chiudi" Width="90px"
+                                    Skin="Office2007" ToolTip="Chiudi">
+                                    <Icon PrimaryIconUrl="../../../../images/cancel.png" PrimaryIconLeft="5px" />
+                                </telerik:RadButton>
+                                &nbsp; &nbsp; &nbsp;
+                                <telerik:RadButton ID="ConfermaEditPanelButton" runat="server" Text="Conferma" Width="100px"
+                                    Skin="Office2007">
+                                    <Icon PrimaryIconUrl="../../../../images/checks.png" PrimaryIconLeft="5px" />
+                                </telerik:RadButton>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </ContentTemplate>
+    </asp:UpdatePanel>
+</asp:Content>

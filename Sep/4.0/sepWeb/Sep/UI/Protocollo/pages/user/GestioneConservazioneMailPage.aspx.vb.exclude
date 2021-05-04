@@ -1,0 +1,1443 @@
+﻿Imports ParsecAdmin
+Imports ParsecPro
+Imports Telerik.Web.UI
+Imports System.IO
+Imports System.Net
+Imports System.Xml
+Imports System.Data.Objects
+
+
+Public Class MailConservazione
+    Public Property Id As Integer
+    Public Property Tipologia As String
+    'Public Property Data As Date
+    Public Property IdUtenteLavorazione As String
+    Public Property MittenteDestinatario As String
+    Public Property Oggetto As String
+    Public Property AnnoProtocollo As Integer
+    Public Property DataInvioRicezione As Date
+    Public Property NumeroProtocollo As Integer
+    Public Property NomeFileEml As String
+    Public Property PercorsoRelativo As String
+    Public Property IdDocumentoWS As Nullable(Of Integer)
+    Public Property IdPacchettoVersamento As Nullable(Of Integer)
+
+    Public Property Conservabile As Boolean
+
+    'Public Property IdRegistrazioneProtocollo As Nullable(Of Integer)
+End Class
+
+Public Class MailConservazioneFiltro
+
+    Public Property DataInizio As Nullable(Of DateTime)
+    Public Property DataFine As Nullable(Of DateTime)
+
+    Public Property DaInviare As Boolean = False
+    Public Property Inviati As Boolean = False
+    Public Property Archiviati As Boolean = False
+    'Public Property NonConservabili As Boolean = False
+    Public Property NonConservabili As String
+
+    'Public Property DaFascicolo As Boolean = False
+
+End Class
+
+Partial Class GestioneConservazioneMailPage
+    Inherits System.Web.UI.Page
+    Private WithEvents MainPage As MainPage
+
+#Region "PROPRIETA'"
+
+    Public Property CheckedRowCount() As Integer
+        Get
+            Return CType(Session("GestioneConservazioneMailPage_CheckedRowCount"), Integer)
+        End Get
+        Set(ByVal value As Integer)
+            Session("GestioneConservazioneMailPage_CheckedRowCount") = value
+        End Set
+    End Property
+
+    Public Property Mail() As MailConservazione
+        Get
+            Return CType(Session("GestioneConservazioneMailPage_Mail"), MailConservazione)
+        End Get
+        Set(ByVal value As MailConservazione)
+            Session("GestioneConservazioneMailPage_Mail") = value
+        End Set
+    End Property
+
+    Public Property ListaMail() As List(Of MailConservazione)
+        Get
+            Return CType(Session("GestioneConservazioneMailPage_ListaMailArrivo"), List(Of MailConservazione))
+        End Get
+        Set(ByVal value As List(Of MailConservazione))
+            Session("GestioneConservazioneMailPage_ListaMailArrivo") = value
+        End Set
+    End Property
+
+    Public Property Cliente() As ParsecAdmin.Cliente
+        Get
+            Return CType(Session("GestioneConservazioneMailPage_Cliente"), ParsecAdmin.Cliente)
+        End Get
+        Set(ByVal value As ParsecAdmin.Cliente)
+            Session("GestioneConservazioneMailPage_Cliente") = value
+        End Set
+    End Property
+
+#End Region
+
+#Region "EVENTI PAGINA"
+
+    Protected Sub Page_Init(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Init
+        Me.MainPage = CType(Me.Master, MainPage)
+        Me.MainPage.NomeModulo = "Protocollo"
+        Me.MainPage.DescrizioneProcedura = "> Conservazione E-Mail Partenza"
+
+        Dim css As HtmlGenericControl
+        css = New HtmlGenericControl
+        css.TagName = "style"
+        css.Attributes.Add("type", "text/css")
+        css.InnerHtml = "div.RadUploadProgressArea_Office2007 .ruProgress { background-image: none;}" & vbCrLf
+        css.InnerHtml += ".RadUploadProgressArea { width: 320px !important;}" & vbCrLf
+        css.InnerHtml += "div.RadUploadProgressArea li.ruProgressHeader{ margin: 10px 18px 0px; }" & vbCrLf
+        css.InnerHtml += "table.CkeckListCss tr td label {margin-right:10px;padding-right:10px;}" & vbCrLf
+        Me.Page.Header.Controls.Add(css)
+
+        If Not Me.Page.IsPostBack Then
+            Me.ListaMail = Nothing
+            Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+
+            Me.CheckedRowCount = 0
+
+            Me.ResettaFiltro()
+
+            'Imposto l'ordinamento predefinito.
+            'Dim sortExpr As New Telerik.Web.UI.GridSortExpression()
+            'sortExpr.FieldName = "Data"
+            'sortExpr.SortOrder = Telerik.Web.UI.GridSortOrder.Ascending
+            'Me.MailGridView.MasterTableView.SortExpressions.AddSortExpression(sortExpr)
+
+            Dim clienteRepository As New ParsecAdmin.ClientRepository
+            Dim cliente = clienteRepository.GetAll().FirstOrDefault
+            Me.Cliente = cliente
+            clienteRepository.Dispose()
+
+            Me.chkDaInviare.Checked = True
+            Me.chkInviate.Checked = False
+            Me.chkArchiviate.Checked = False
+
+            Me.comboTipologia.Items.Add(New Telerik.Web.UI.RadComboBoxItem("Arrivo", "1"))
+            Me.comboTipologia.Items.Add(New Telerik.Web.UI.RadComboBoxItem("Partenza", "2"))
+            Me.comboTipologia.SelectedIndex = 1 'email partenza
+
+            Dim limitePagine = GetlimiteNumeroPagineRicerca()
+            If (limitePagine = -1) Then
+                Me.NoPaging.Visible = False
+            End If
+
+           
+
+            'Me.cmbConservabilita.Items.Insert(0, New Telerik.Web.UI.RadComboBoxItem("- Selezionare -", "0"))
+            Me.cmbConservabilita.Items.Insert(0, New Telerik.Web.UI.RadComboBoxItem("NO", "0"))
+            Me.cmbConservabilita.Items.Insert(1, New Telerik.Web.UI.RadComboBoxItem("SI", "1"))
+
+            Me.cmbConservabilita.SelectedValue = 0
+
+            Dim funzioneAbilitata = utenteCollegato.Funzioni.Where(Function(c) c.Codice = CInt(ParsecAtt.TipologiaFunzione.AbilitaRipristinoMailConservazione)).FirstOrDefault
+            If (Not utenteCollegato.SuperUser And funzioneAbilitata Is Nothing) Then
+                Me.cmbConservabilita.Enabled = False
+                Me.cmbConservabilita.SelectedValue = 0
+                Me.cmbConservabilita.Visible = False
+                'Me.chkNonConservabili.Checked = False
+            Else
+                'Me.chkNonConservabili.Enabled = True
+                'Me.cmbConservabilita.SelectedValue = 0
+            End If
+
+        End If
+
+
+
+        Me.MailGridView.GroupingSettings.CaseSensitive = False
+        ' Me.ChiudiAnteprimaEmailButton.Attributes.Add("onclick", "HidePanel();hide=true;return false;")
+
+    End Sub
+
+    Protected Sub Page_LoadComplete(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.LoadComplete
+
+        'If (Me.comboTipologia.SelectedValue = "1") Then
+        '    Me.TitoloElencoFattureLabel.Text = "Elenco Mail in Arrivo " & If(Me.ListaMail.Count > 0, "( " & Me.ListaMail.Count.ToString & " )", "")
+        'Else
+        '    Me.TitoloElencoFattureLabel.Text = "Elenco Mail in Partenza " & If(Me.ListaMail.Count > 0, "( " & Me.ListaMail.Count.ToString & " )", "")
+        'End If
+
+        Me.ConservaMailImageButton.Enabled = Me.MailGridView.SelectedItems.Count > 0
+
+    End Sub
+
+#End Region
+
+#Region "EVENTI GRIGLIA"
+
+    Protected Sub MailGridView_NeedDataSource(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridNeedDataSourceEventArgs) Handles MailGridView.NeedDataSource
+
+        If Me.ListaMail Is Nothing Then
+            Dim filtro = Me.GetFiltro
+            If Not filtro.Inviati AndAlso Not filtro.DaInviare AndAlso Not filtro.Archiviati Then
+                Me.ListaMail = New List(Of MailConservazione)
+            Else
+                Me.ListaMail = Me.GetMailDaConservare(Me.GetFiltro)
+            End If
+            'Me.ListaMail = Me.GetMailDaConservare(Me.GetFiltro)
+        End If
+        Me.MailGridView.DataSource = Me.ListaMail
+
+        'arrivo
+        'If Me.ListaMail Is Nothing Then
+
+        '    Dim ListaMailTemp = New List(Of MailConservazione)
+        '    If (Me.comboTipologia.SelectedValue = "1") Then
+        '        ListaMailTemp = Me.GetViewEmailArrivate(Me.GetFiltro).OrderBy(Function(c) c.Data).ToList
+        '    Else
+        '        ListaMailTemp = Me.GetViewEmailPartite(Me.GetFiltro).OrderBy(Function(c) c.Data).ToList
+        '    End If
+
+
+        '    Dim listaMailDaInviare As New List(Of MailConservazione)
+        '    Dim listaMailInviate As New List(Of MailConservazione)
+        '    Dim listaMailArchiviate As New List(Of MailConservazione)
+
+        '    'quelle da inviare e quindi quelle con idDOcumentoWS nullo
+        '    If (chkDaInviare.Checked) Then
+        '        listaMailDaInviare = ListaMailTemp.Where(Function(w) w.IdDocumentoWS Is Nothing).ToList
+        '    End If
+
+        '    If (chkInviate.Checked Or chkArchiviate.Checked) Then
+
+        '        Dim wsConservazione As New wsConservazione.wsConservazione
+
+        '        Dim soapGetListaDocumentiRequest As New wsConservazione.SoapGetListaDocumentiRequest
+        '        soapGetListaDocumentiRequest.codiceLicenza = Me.Cliente.CodLicenza
+        '        Dim wsFiltroDocumento As New wsConservazione.DocumentoBaseConservazioneFiltro
+        '        wsFiltroDocumento.TipoDocumento = "MAIL"
+        '        soapGetListaDocumentiRequest.documentoFiltro = wsFiltroDocumento
+        '        Dim listaMailWS = wsConservazione.getListaDocumenti(soapGetListaDocumentiRequest).ListaDocumentiBase
+        '        ListaMailTemp = ListaMailTemp.Where(Function(w) Not w.IdDocumentoWS Is Nothing).ToList
+
+        '        If (chkInviate.Checked And Not listaMailWS Is Nothing) Then
+        '            Dim listaIdWS = listaMailWS.Where(Function(w) w.idPacchettoVersamento Is Nothing).Select(Function(s) s.idDocumento).ToList
+        '            If (listaIdWS.Count > 0) Then
+        '                If (ListaMailTemp.Count > 0) Then
+        '                    listaMailInviate = ListaMailTemp.Where(Function(w) Not w.IdDocumentoWS Is Nothing And listaIdWS.Contains(w.IdDocumentoWS)).ToList
+        '                End If
+        '            End If
+        '            'tengo in considerazione le mail inviate e cancellate dal modulo archivio
+        '            Dim listaIDWSArchvio As IEnumerable(Of Integer) = listaMailWS.Select(Function(s) s.idDocumento)
+        '            Dim listaToAddinviateECancellateDaArchivio As List(Of MailConservazione) = ListaMailTemp.Where(Function(w) Not listaIDWSArchvio.Contains(w.IdDocumentoWS)).ToList
+        '            listaMailInviate = listaMailInviate.Union(listaToAddinviateECancellateDaArchivio).ToList
+        '        End If
+
+
+        '        If (chkArchiviate.Checked And Not listaMailWS Is Nothing) Then
+        '            Dim listaIdWS = listaMailWS.Where(Function(w) Not w.idPacchettoVersamento Is Nothing).Select(Function(s) s.idDocumento).ToList
+        '            If (listaIdWS.Count > 0) Then
+        '                If (ListaMailTemp.Count > 0) Then
+        '                    listaMailArchiviate = ListaMailTemp.Where(Function(w) listaIdWS.Contains(w.IdDocumentoWS)).ToList
+        '                End If
+        '            End If
+        '        End If
+
+
+        '    End If
+
+        '    Me.ListaMail = listaMailArchiviate.Union(listaMailInviate).Union(listaMailDaInviare).ToList
+
+        'End If
+
+        '    Me.MailGridView.DataSource = Me.ListaMail
+
+    End Sub
+
+    Protected Sub MailGridView_ItemCommand(sender As Object, e As Telerik.Web.UI.GridCommandEventArgs) Handles MailGridView.ItemCommand
+
+        If e.CommandName = "Anteprima" Then
+            Me.DownloadFile(e.Item)
+        ElseIf e.CommandName = "SbloccoMail" Then
+            Me.SbloccaMail(e.Item)
+        ElseIf e.CommandName = "RipristinaMail" Then
+            Me.RipristinaBloccaMail(e.Item)
+        End If
+
+    End Sub
+
+    Protected Sub MailGridView_ItemCreated(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridItemEventArgs) Handles MailGridView.ItemCreated
+
+        If TypeOf e.Item Is GridDataItem Then
+            AddHandler e.Item.PreRender, AddressOf MailGridView_ItemPreRender
+        End If
+
+        If TypeOf e.Item Is GridFilteringItem Then
+            e.Item.Style.Add("position", "relative")
+            e.Item.Style.Add("top", "expression(this.offsetParent.scrollTop)")
+            e.Item.Style.Add("z-index", "99")
+        End If
+
+        If TypeOf e.Item Is GridHeaderItem Then
+            e.Item.Style.Add("position", "relative")
+            e.Item.Style.Add("top", "expression(this.offsetParent.scrollTop)")
+            e.Item.Style.Add("z-index", "99")
+            e.Item.Style.Add("background-color", "White")
+        End If
+
+        If TypeOf e.Item Is Telerik.Web.UI.GridPagerItem Then
+            Dim pageSizeComboBox As RadComboBox = CType(e.Item.FindControl("PageSizeComboBox"), RadComboBox)
+            pageSizeComboBox.Visible = False
+            Dim changePageSizelbl As Label = CType(e.Item.FindControl("ChangePageSizeLabel"), Label)
+            changePageSizelbl.Visible = False
+
+        End If
+
+    End Sub
+
+    Protected Sub MailGridView_PreRender(ByVal sender As Object, ByVal e As EventArgs) Handles MailGridView.PreRender
+        Dim headerItem As GridHeaderItem = CType(Me.MailGridView.MasterTableView.GetItems(GridItemType.Header)(0), GridHeaderItem)
+        Dim count = Me.CheckedRowCount
+        If count > 0 Then
+            CType(headerItem.FindControl("SelectAllCheckBox"), CheckBox).Checked = (Me.MailGridView.SelectedItems.Count = count)
+        End If
+        CType(headerItem.FindControl("SelectAllCheckBox"), CheckBox).Enabled = Me.MailGridView.Items.Count > 0
+        Me.CheckedRowCount = 0
+    End Sub
+
+    Protected Sub MailGridView_ItemPreRender(ByVal sender As Object, ByVal e As EventArgs)
+        CType(CType(sender, GridDataItem)("CheckBoxTemplateColumn").FindControl("SelectCheckBox"), CheckBox).Checked = CType(sender, GridDataItem).Selected
+    End Sub
+
+    Protected Sub MailGridView_ItemDataBound(sender As Object, e As Telerik.Web.UI.GridItemEventArgs) Handles MailGridView.ItemDataBound
+
+        Dim sbloccoButton As ImageButton = Nothing
+        Dim statoButton As ImageButton = Nothing
+
+        If TypeOf e.Item Is Telerik.Web.UI.GridPagerItem Then
+            Dim pagerItem = CType(e.Item, GridPagerItem)
+            Dim itemsCount = pagerItem.Paging.DataSourceCount
+            'Me.TitoloElencoFattureLabel.Text = "Elenco Registrazioni di Protocollo " & If(itemsCount > 0, "( " & itemsCount.ToString & " )", "")
+            If (Me.comboTipologia.SelectedValue = "1") Then
+                Me.TitoloElencoFattureLabel.Text = "Elenco Mail in Arrivo " & If(itemsCount > 0, "( " & itemsCount.ToString & " )", "")
+            Else
+                Me.TitoloElencoFattureLabel.Text = "Elenco Mail in Partenza " & If(itemsCount > 0, "( " & itemsCount.ToString & " )", "")
+            End If
+        End If
+
+        If TypeOf e.Item Is Telerik.Web.UI.GridDataItem Then
+            Dim dataItem As Telerik.Web.UI.GridDataItem = e.Item
+
+            Dim email As MailConservazione = CType(e.Item.DataItem, MailConservazione)
+
+            If TypeOf dataItem("SbloccoMail").Controls(0) Is ImageButton Then
+                statoButton = CType(dataItem("StatoMail").Controls(0), ImageButton)
+                sbloccoButton = CType(dataItem("SbloccoMail").Controls(0), ImageButton)
+
+                statoButton.Enabled = False
+
+
+                If Not email.IdDocumentoWS.HasValue Then
+
+                    sbloccoButton.ImageUrl = "~\images\vuoto.png"
+                    sbloccoButton.Attributes.Add("onclick", "return false;")
+                    sbloccoButton.ToolTip = "E-Mail da inviare al Modulo Archivio."
+
+                    statoButton.ImageUrl = "~\images\pBlue16.png"
+                    statoButton.ToolTip = "E-Mail da inviare al Modulo Archivio."
+
+                    Me.CheckedRowCount += 1
+                Else
+
+                    Dim chk As CheckBox = CType(dataItem("CheckBoxTemplateColumn").FindControl("SelectCheckBox"), CheckBox)
+                    chk.Enabled = False
+
+
+                    If email.IdPacchettoVersamento.HasValue Then
+                        sbloccoButton.ImageUrl = "~\images\Lock_16.png"
+                        sbloccoButton.Attributes.Add("onclick", "return false;")
+                        sbloccoButton.ToolTip = "E-Mail già impacchettata: impossibile sbloccarlo."
+
+                        statoButton.ImageUrl = "~\images\pRosso16.png"
+                        statoButton.ToolTip = "E-Mail già inviata al Modulo Archivio ed Impacchettata."
+                    Else
+                        sbloccoButton.ImageUrl = "~\images\unLock_16.png"
+                        sbloccoButton.ToolTip = "Sblocca E-Mail."
+
+                        statoButton.ImageUrl = "~\images\pVerde16.png"
+                        statoButton.ToolTip = "E-Mail già inviata al Modulo Archivio e non Impacchettata."
+                    End If
+
+                End If
+
+            End If
+
+            If TypeOf dataItem("RipristinaMail").Controls(0) Is ImageButton Then
+
+                Dim ripristinaMailButton As ImageButton = Nothing
+                ripristinaMailButton = CType(dataItem("RipristinaMail").Controls(0), ImageButton)
+
+                If (Me.comboTipologia.SelectedValue = "1") Then
+                    ' sempre disabilitato il "NASCONDI MAIL"
+                    ripristinaMailButton.ImageUrl = "~\images\vuoto.png"
+                    ripristinaMailButton.ToolTip = ""
+                    ripristinaMailButton.Attributes.Add("onclick", "return false;")
+
+                Else
+                    Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+                    Dim funzioneAbilitata = utenteCollegato.Funzioni.Where(Function(c) c.Codice = CInt(ParsecAtt.TipologiaFunzione.AbilitaRipristinoMailConservazione)).FirstOrDefault
+
+                    If utenteCollegato.SuperUser Or Not funzioneAbilitata Is Nothing Then
+                        If (email.IdDocumentoWS Is Nothing) Then
+                            If email.Conservabile Then
+                                ripristinaMailButton.ImageUrl = "~\images\Delete16.png"
+                                ripristinaMailButton.ToolTip = "Nascondi e-mail"
+                            Else
+                                ripristinaMailButton.ImageUrl = "~\images\undo.png"
+                                ripristinaMailButton.ToolTip = "Rendi Visibile E-mail"
+                            End If
+                        Else
+                            ripristinaMailButton.ImageUrl = "~\images\vuoto.png"
+                            ripristinaMailButton.ToolTip = ""
+                            ripristinaMailButton.Attributes.Add("onclick", "return false;")
+                        End If
+                       
+
+                    Else
+                        'non sono un super utente
+                        If (email.IdDocumentoWS Is Nothing) Then
+                            If email.Conservabile Then
+                                ripristinaMailButton.ImageUrl = "~\images\Delete16.png"
+                                ripristinaMailButton.ToolTip = "Nascondi E-mail."
+                            Else
+                                ripristinaMailButton.ImageUrl = "~\images\vuoto.png"
+                                ripristinaMailButton.ToolTip = ""
+                                ripristinaMailButton.Attributes.Add("onclick", "return false;")
+                            End If
+                        Else
+                            ripristinaMailButton.ImageUrl = "~\images\vuoto.png"
+                            ripristinaMailButton.ToolTip = ""
+                            ripristinaMailButton.Attributes.Add("onclick", "return false;")
+                        End If
+
+
+                    End If
+                End If
+
+                
+
+            End If
+
+        End If
+
+
+        'Dim btnSbloccoMail As ImageButton = Nothing
+        'Dim btnStato As ImageButton = Nothing
+
+        'If TypeOf e.Item Is Telerik.Web.UI.GridDataItem Then
+        '    Dim dataItem As Telerik.Web.UI.GridDataItem = e.Item
+        '    Dim email As MailConservazione = CType(e.Item.DataItem, MailConservazione)
+        '    'vuoto.png
+        '    If TypeOf dataItem("SbloccoMail").Controls(0) Is ImageButton Then
+        '        btnStato = CType(dataItem("StatoMail").Controls(0), ImageButton)
+        '        btnStato.Enabled = False
+
+        '        btnSbloccoMail = CType(dataItem("SbloccoMail").Controls(0), ImageButton)
+
+        '        If (email.IdDocumentoWS Is Nothing) Then
+        '            btnSbloccoMail.ImageUrl = "~\images\vuoto.png"
+        '            btnSbloccoMail.Attributes.Add("onclick", "return false;")
+        '            btnSbloccoMail.ToolTip = "E-Mail da inviare al Modulo Archivio."
+
+        '            btnStato.ImageUrl = "~\images\pBlue16.png"
+        '            btnStato.ToolTip = "E-Mail da inviare al Modulo Archivio."
+
+        '        Else
+
+        '            Dim chk As CheckBox = CType(dataItem("CheckBoxTemplateColumn").FindControl("SelectCheckBox"), CheckBox)
+        '            chk.Enabled = False
+
+        '            Try
+
+        '                btnStato.ImageUrl = "~\images\pVerde16.png"
+        '                btnStato.ToolTip = "E-Mail già inviata al Modulo Archivio e non Impacchettata."
+
+        '                Dim wsConservazione As New wsConservazione.wsConservazione
+        '                Dim soapGetDocumentoRequest As New wsConservazione.SoapGetDocumentoRequest
+        '                soapGetDocumentoRequest.codiceLicenza = Me.Cliente.CodLicenza
+        '                Dim wsFiltroDocumento As New wsConservazione.DocumentoBaseConservazioneFiltro
+        '                wsFiltroDocumento.idDocumento = email.IdDocumentoWS
+        '                soapGetDocumentoRequest.documentoFiltro = wsFiltroDocumento
+
+        '                Dim soapDocumentoBaseResponse = wsConservazione.getDocumento(soapGetDocumentoRequest)
+        '                If (soapDocumentoBaseResponse.messaggioErrore = "") Then
+        '                    If (soapDocumentoBaseResponse.ListaDocumentiBase(0).idPacchettoVersamento.HasValue) Then
+        '                        btnSbloccoMail.ImageUrl = "~\images\Lock_16.png"
+        '                        btnSbloccoMail.Attributes.Add("onclick", "return false;")
+        '                        btnSbloccoMail.ToolTip = "E-Mail già impacchettata: impossibile sbloccarla."
+        '                        btnStato.ImageUrl = "~\images\pRosso16.png"
+        '                        btnStato.ToolTip = "E-Mail già inviata al Modulo Archivio ed Impacchettata."
+        '                    End If
+        '                Else
+        '                    Throw New Exception(soapDocumentoBaseResponse.messaggioErrore)
+        '                End If
+
+        '            Catch ex As Exception
+        '                'NIENTE
+        '            End Try
+
+        '        End If
+
+        '    End If
+
+        'End If
+
+    End Sub
+
+    Protected Sub ToggleRowSelection(ByVal sender As Object, ByVal e As EventArgs)
+        CType(CType(sender, CheckBox).NamingContainer, GridItem).Selected = CType(sender, CheckBox).Checked
+    End Sub
+
+    Protected Sub ToggleSelectedState(ByVal sender As Object, ByVal e As EventArgs)
+        Dim headerCheckBox As CheckBox = CType(sender, CheckBox)
+        For Each dataItem As GridDataItem In Me.MailGridView.MasterTableView.Items
+            Dim chk As CheckBox = CType(dataItem.FindControl("SelectCheckBox"), CheckBox)
+            If chk.Enabled Then
+                chk.Checked = headerCheckBox.Checked
+                dataItem.Selected = headerCheckBox.Checked
+            End If
+        Next
+    End Sub
+
+#End Region
+
+#Region "AZIONI PANNELLO FILTRO"
+
+    Private Function GetAnnoEsercizio() As Integer
+        Dim annoEsercizio As Integer = Now.Year
+        Dim parametri As New ParsecAdmin.ParametriRepository
+        Dim parametro As ParsecAdmin.Parametri = parametri.GetByName("AnnoCorrente", ParsecAdmin.TipoModulo.ATT)
+        If Not parametro Is Nothing Then
+            annoEsercizio = CInt(parametro.Valore)
+        End If
+        parametri.Dispose()
+        Return annoEsercizio
+    End Function
+
+    Private Sub ResettaFiltro()
+        For Each col As GridColumn In Me.MailGridView.MasterTableView.Columns
+            col.CurrentFilterValue = String.Empty
+        Next
+        Me.MailGridView.MasterTableView.FilterExpression = String.Empty
+        Me.DataInizioTextBox.SelectedDate = New Date(Me.GetAnnoEsercizio, 1, 1)
+        Me.DataFineTextBox.SelectedDate = Now
+
+        chkDaInviare.Checked = True
+        chkArchiviate.Checked = False
+        chkInviate.Checked = False
+        'chkNonConservabili.Checked = False
+        Me.cmbConservabilita.SelectedValue = 1
+        'chkInviateFascicolo.Checked = False
+
+    End Sub
+
+    Private Function GetFiltro() As MailConservazioneFiltro
+
+        Dim filtro As New MailConservazioneFiltro
+        filtro.Inviati = Me.chkInviate.Checked
+        filtro.DaInviare = Me.chkDaInviare.Checked
+        filtro.Archiviati = Me.chkArchiviate.Checked
+        'filtro.NonConservabili = Me.chkNonConservabili.Checked
+        filtro.NonConservabili = Me.cmbConservabilita.SelectedValue
+
+        filtro.DataInizio = Me.DataInizioTextBox.SelectedDate
+        filtro.DataFine = Me.DataFineTextBox.SelectedDate
+
+        Return filtro
+
+    End Function
+
+    Private Sub AggiornaGriglia()
+        Me.ListaMail = Nothing
+        Me.MailGridView.Rebind()
+    End Sub
+
+    Protected Sub FiltraImageButton_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles FiltraImageButton.Click
+        Me.AggiornaGriglia()
+    End Sub
+
+    Protected Sub AnnullaFiltroImageButton_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles AnnullaFiltroImageButton.Click
+        Me.ResettaFiltro()
+        Me.AggiornaGriglia()
+    End Sub
+
+#End Region
+
+#Region "METODI PRIVATI"
+
+    Protected Sub EsportaInExcelImageButton_Click(sender As Object, e As System.Web.UI.ImageClickEventArgs) Handles EsportaInExcelImageButton.Click
+
+        Me.MailGridView.AllowPaging = False
+        Me.MailGridView.Rebind()
+
+        If Me.MailGridView.MasterTableView.Items.Count = 0 Then
+            ParsecUtility.Utility.MessageBox("Non ci sono Mail." & vbCrLf & "Impossibile eseguire l'esportazione!", False)
+            Exit Sub
+        End If
+
+        Dim utente As ParsecAdmin.Utente = ParsecUtility.Applicazione.UtenteCorrente
+        Dim exportFilename As String = String.Format("Mail_UT{0}_AL_{1}.xls", utente.Id, Now.ToString("ddMM_yyyy_hhmmss"))
+
+        Dim pathExport As String = System.Configuration.ConfigurationManager.AppSettings("PathDocumentiTemp")
+        Dim fullPathExport As String = pathExport & exportFilename
+
+        Dim swExport As New IO.StreamWriter(fullPathExport, False, System.Text.Encoding.Default)
+        Dim line As New StringBuilder
+
+        line.Append("DATA INVIO/ RICEZIONE" & vbTab)
+        line.Append("N. PROT." & vbTab)
+        line.Append("ANNO PROT." & vbTab)
+        line.Append("MITTENTE/DESTINATARIO" & vbTab)
+        line.Append("OGGETTO" & vbTab)
+
+        swExport.WriteLine(line.ToString)
+        line.Clear()
+
+        Dim p As MailConservazione = Nothing
+        For Each item As GridDataItem In Me.MailGridView.MasterTableView.Items
+            Dim idSelezionato As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+
+            p = Me.ListaMail.Where(Function(c) c.Id = idSelezionato).FirstOrDefault
+
+            line.Append(If(IsDate(p.DataInvioRicezione), p.DataInvioRicezione.ToString, "") & vbTab)
+            line.Append(If(p.NumeroProtocollo > 0, p.NumeroProtocollo.ToString, "") & vbTab)
+            line.Append(If(p.AnnoProtocollo > 0, p.AnnoProtocollo.ToString, "") & vbTab)
+            line.Append(If(Not p.MittenteDestinatario Is Nothing, p.MittenteDestinatario.ToString, "") & vbTab)
+            line.Append(If(Not p.Oggetto Is Nothing, p.Oggetto.ToString, "") & vbTab)
+
+            swExport.WriteLine(line.ToString)
+            line.Clear()
+
+        Next
+
+        swExport.Close()
+
+        Session("AttachmentFullName") = fullPathExport
+
+        Dim pageUrl As String = "~/UI/Amministrazione/pages/user/ExportExcelPage.aspx"
+        ParsecUtility.Utility.PageReload(pageUrl, False)
+
+        MailGridView.AllowPaging = True
+        MailGridView.Rebind()
+
+    End Sub
+
+    Private Function GetlimiteNumeroPagineRicerca() As Integer
+        Dim limiteNumeroPAgine As Integer = -1
+        Dim parametri As New ParsecAdmin.ParametriRepository
+        Dim parametro As ParsecAdmin.Parametri = parametri.GetByName("limiteNumeroPaginazioneConservazione", ParsecAdmin.TipoModulo.CSZ)
+        If Not parametro Is Nothing Then
+            limiteNumeroPAgine = CInt(parametro.Valore)
+        End If
+        parametri.Dispose()
+        Return limiteNumeroPAgine
+    End Function
+
+    Protected Sub NoPaging_Click(sender As Object, e As System.EventArgs) Handles NoPaging.Click
+
+        Dim limitePagine = GetlimiteNumeroPagineRicerca()
+        If (Me.MailGridView.PageCount > limitePagine) Then
+            ParsecUtility.Utility.MessageBox("Il numero di record risultante dalla ricerca è eccessivo: si prega di raffinare la ricerca!", False)
+            Exit Sub
+        End If
+
+        Me.MailGridView.AllowPaging = Not Me.MailGridView.AllowPaging
+        If Me.MailGridView.AllowPaging Then
+            Me.NoPaging.Text = "Non Paginare"
+            Me.NoPaging.Icon.PrimaryIconUrl = "~/images/Next.png"
+        Else
+            Me.NoPaging.Text = "Paginare"
+            Me.NoPaging.Icon.PrimaryIconUrl = "~/images/Previous.png"
+        End If
+        Me.MailGridView.Rebind()
+    End Sub
+
+    Private Function GetMailDaConservare(ByVal filtro As MailConservazioneFiltro) As List(Of MailConservazione)
+        Try
+            If (Me.comboTipologia.SelectedValue = "1") Then
+                'MAIL IN ARRIVO
+
+                Dim regitrazioniProtocollo As New ParsecPro.RegistrazioniRepository()
+                Dim mailArrivo As New ParsecPro.EmailArrivoRepository(regitrazioniProtocollo.Context)
+
+                Dim fatture As New ParsecPro.FatturaElettronicaRepository(regitrazioniProtocollo.Context)
+
+                'Dim listaFattureProtocollate = fatture.GetQuery().Where(Function(w) Not w.IdRegistrazione Is Nothing)
+                'Dim viewListaIdRegistrazioni = (From fatt In listaFattureProtocollate
+                '                        Join reg In regitrazioniProtocollo.GetQuery On reg.NumeroProtocollo Equals fatt.NumeroProtocollo And reg.DataImmissione.Value.Year Equals fatt.AnnoProtocollo
+                '                        Select reg.Id).ToList
+                '.Where(Function(w) w.Annullato = False And w.Modificato = False)
+                Dim documentiConservati As New ParsecPro.DocumentoConservazioneRepository(regitrazioniProtocollo.Context)
+
+                Dim view = From mail In mailArrivo.GetQuery.Where(Function(w) w.Cancellata = False And Not w.IdRegistrazione Is Nothing And Not w.Oggetto.ToUpper.Contains("FATTURA - POSTA CERTIFICATA: Invio File"))
+                         Group Join documentoConservato In documentiConservati.GetQuery
+                         On mail.IdDocumentoWS Equals documentoConservato.Id
+                          Into elencoDocumentiConservati = Group
+                          From documentoConservato In elencoDocumentiConservati.DefaultIfEmpty
+                          Join registrazione In regitrazioniProtocollo.GetQuery.Where(Function(w) w.Annullato = False And w.Modificato = False)
+                          On registrazione.Id Equals mail.IdRegistrazione
+                          Let IdPacchettoVersamento = If(documentoConservato Is Nothing, Nothing, documentoConservato.IdPacchettoVersamento)
+                          Select mail, registrazione, IdPacchettoVersamento
+
+
+                'Where Not mail.IdRegistrazione Is Nothing And Not viewListaIdRegistrazioni.Contains(mail.IdRegistrazione)
+                'Dim s = CType(view, ObjectQuery)
+
+
+                'Dim contarecord = view.Count
+
+                'SOLO INVIATI
+                If filtro.Inviati AndAlso Not filtro.DaInviare And Not filtro.Archiviati Then
+                    view = view.Where(Function(c) c.mail.IdDocumentoWS.HasValue And Not c.IdPacchettoVersamento.HasValue)
+
+                    'SOLO DA INVIARE
+                ElseIf Not filtro.Inviati AndAlso filtro.DaInviare And Not filtro.Archiviati Then
+                    view = view.Where(Function(c) Not c.mail.IdDocumentoWS.HasValue)
+
+                    'INVIATI + DA INVIARE
+                ElseIf filtro.Inviati AndAlso filtro.DaInviare And Not filtro.Archiviati Then
+                    view = view.Where(Function(c) Not c.mail.IdDocumentoWS.HasValue Or c.mail.IdDocumentoWS.HasValue And Not c.IdPacchettoVersamento.HasValue)
+
+                    'SOLO ARCHIVIARE
+                ElseIf filtro.Archiviati AndAlso Not filtro.Inviati AndAlso Not filtro.DaInviare Then
+                    view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue)
+
+                    'INVIATI + ARCHIVIARE
+                ElseIf filtro.Archiviati AndAlso filtro.Inviati AndAlso Not filtro.DaInviare Then
+                    view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue Or c.mail.IdDocumentoWS.HasValue)
+
+                    'DA INVIARE + ARCHIVIARE
+                ElseIf filtro.Archiviati AndAlso Not filtro.Inviati AndAlso filtro.DaInviare Then
+                    view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue Or Not c.mail.IdDocumentoWS.HasValue)
+
+                    'TUTTI
+                ElseIf filtro.Inviati AndAlso filtro.DaInviare AndAlso filtro.Archiviati Then
+                    view = view.Where(Function(c) Not c.mail.IdDocumentoWS.HasValue Or c.mail.IdDocumentoWS.HasValue Or c.IdPacchettoVersamento.HasValue)
+                End If
+
+                If filtro.DataInizio.HasValue Then
+                    Dim d As Date = filtro.DataInizio.Value
+                    Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 0, 0, 0, 0)
+                    view = view.Where(Function(c) c.mail.DataArrivo >= newDate)
+                End If
+
+                If filtro.DataFine.HasValue Then
+                    Dim d As Date = filtro.DataFine.Value
+                    Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 23, 59, 59, 999)
+                    view = view.Where(Function(c) c.mail.DataArrivo <= newDate)
+                End If
+
+                view = view.Where(Function(c) c.mail.Cancellata = False Or c.mail.Cancellata = Nothing)
+                view = view.Where(Function(c) c.mail.Lavorata = True Or c.mail.Lavorata = Nothing)
+
+                Dim res = From e In view.AsEnumerable.Select(Function(e) New MailConservazione With {
+                                                                   .Id = e.mail.Id,
+                                                                    .IdUtenteLavorazione = e.mail.IdUtente,
+                                                                    .MittenteDestinatario = e.mail.Mittente,
+                                                                    .NomeFileEml = e.mail.NomeFileEml,
+                                                                    .Oggetto = e.mail.Oggetto,
+                                                                    .PercorsoRelativo = e.mail.PercorsoRelativo,
+                                                                    .Tipologia = "2",
+                                                                    .IdDocumentoWS = e.mail.IdDocumentoWS,
+                                                                    .IdPacchettoVersamento = e.IdPacchettoVersamento,
+                                                                    .Conservabile = False,
+                                                                    .DataInvioRicezione = e.mail.DataArrivo,
+                                                                    .AnnoProtocollo = e.registrazione.DataImmissione.Value.Year,
+                                                                    .NumeroProtocollo = e.registrazione.NumeroProtocollo
+                                                            })
+
+                Return res.OrderBy(Function(o) o.NumeroProtocollo).ThenBy(Function(o) o.AnnoProtocollo).ToList
+
+            Else
+
+                'MAIL IN PARTENZA
+
+                Dim mailPartenza As New ParsecPro.EmailRepository
+
+                Dim documentiConservati As New ParsecPro.DocumentoConservazioneRepository(mailPartenza.Context)
+
+                Dim regitrazioniProtocollo As New ParsecCommon.RepositoryBase(Of ParsecPro.Registrazione)(mailPartenza.Context)
+
+                'Dim view = From mail In mailPartenza.GetQuery
+                '            Join registrazione In regitrazioniProtocollo.GetQuery.Where(Function(w) w.Modificato = False And w.Annullato = False) On registrazione.NumeroProtocollo Equals mail.NumeroProtocollo And registrazione.DataImmissione.Value.Year Equals mail.AnnoProtocollo
+                '            Group Join documentoConservato In documentiConservati.GetQuery
+                '            On documentoConservato.Id Equals mail.IdDocumentoWS
+                '            Into elencoDocumentiConservati = Group
+                '            From documentoConservato In elencoDocumentiConservati.DefaultIfEmpty
+                '            Let IdPacchettoVersamento = If(documentoConservato Is Nothing, Nothing, documentoConservato.IdPacchettoVersamento)
+                '            Select mail, IdPacchettoVersamento
+
+                Dim view = From mail In mailPartenza.GetQuery.Where(Function(w) Not w.AnnoProtocollo Is Nothing And Not w.NumeroProtocollo Is Nothing)
+                            Join registrazione In regitrazioniProtocollo.GetQuery.Where(Function(w) w.Modificato = False And w.Annullato = False) On registrazione.NumeroProtocollo Equals mail.NumeroProtocollo And registrazione.DataImmissione.Value.Year Equals mail.AnnoProtocollo
+                            Group Join documentoConservato In documentiConservati.GetQuery
+                            On documentoConservato.Id Equals mail.IdDocumentoWS
+                            Into elencoDocumentiConservati = Group
+                            From documentoConservato In elencoDocumentiConservati.DefaultIfEmpty
+                            Let IdPacchettoVersamento = If(documentoConservato Is Nothing, Nothing, documentoConservato.IdPacchettoVersamento)
+                            Select mail, IdPacchettoVersamento
+
+                Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+                Dim funzioneAbilitata = utenteCollegato.Funzioni.Where(Function(c) c.Codice = CInt(ParsecAtt.TipologiaFunzione.AbilitaRipristinoMailConservazione)).FirstOrDefault
+
+                If filtro.NonConservabili = "1" Then
+                    If (Not utenteCollegato.SuperUser And funzioneAbilitata Is Nothing) Then
+                        view = view.Where(Function(c) c.mail.Conservabile = True)
+                    Else
+                        view = view.Where(Function(c) c.mail.Conservabile = False)
+                    End If
+                Else
+                    view = view.Where(Function(c) c.mail.Conservabile = True)
+                End If
+
+                'SOLO INVIATI
+                If filtro.Inviati AndAlso Not filtro.DaInviare And Not filtro.Archiviati Then
+                    view = view.Where(Function(c) c.mail.IdDocumentoWS.HasValue And Not c.IdPacchettoVersamento.HasValue)
+                    'SOLO DA INVIARE
+                ElseIf Not filtro.Inviati AndAlso filtro.DaInviare And Not filtro.Archiviati Then
+                    view = view.Where(Function(c) Not c.mail.IdDocumentoWS.HasValue)
+
+                    'INVIATI + DA INVIARE
+                ElseIf filtro.Inviati AndAlso filtro.DaInviare And Not filtro.Archiviati Then
+                    view = view.Where(Function(c) Not c.mail.IdDocumentoWS.HasValue Or c.mail.IdDocumentoWS.HasValue And Not c.IdPacchettoVersamento.HasValue)
+
+                    'SOLO ARCHIVIARE
+                ElseIf filtro.Archiviati AndAlso Not filtro.Inviati AndAlso Not filtro.DaInviare Then
+                    view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue)
+
+                    'INVIATI + ARCHIVIARE
+                ElseIf filtro.Archiviati AndAlso filtro.Inviati AndAlso Not filtro.DaInviare Then
+                    view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue Or c.mail.IdDocumentoWS.HasValue)
+
+                    'DA INVIARE + ARCHIVIARE
+                ElseIf filtro.Archiviati AndAlso Not filtro.Inviati AndAlso filtro.DaInviare Then
+                    view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue Or Not c.mail.IdDocumentoWS.HasValue)
+                    'TUTTI
+                ElseIf filtro.Inviati AndAlso filtro.DaInviare AndAlso filtro.Archiviati Then
+                    view = view.Where(Function(c) Not c.mail.IdDocumentoWS.HasValue Or c.mail.IdDocumentoWS.HasValue Or c.IdPacchettoVersamento.HasValue)
+                End If
+
+                If filtro.DataInizio.HasValue Then
+                    Dim d As Date = filtro.DataInizio.Value
+                    Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 0, 0, 0, 0)
+                    view = view.Where(Function(c) c.mail.DataInvio >= newDate)
+                End If
+
+                If filtro.DataFine.HasValue Then
+                    Dim d As Date = filtro.DataFine.Value
+                    Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 23, 59, 59, 999)
+                    view = view.Where(Function(c) c.mail.DataInvio <= newDate)
+                End If
+
+
+
+                view = view.Where(Function(c) c.mail.Cancellata = False Or c.mail.Cancellata Is Nothing)
+
+                Dim res = From e In view.AsEnumerable.Select(Function(e) New MailConservazione With {
+                                                                    .Id = e.mail.Id,
+                                                                    .IdUtenteLavorazione = e.mail.IdUtente,
+                                                                    .MittenteDestinatario = e.mail.Destinatari,
+                                                                    .NomeFileEml = e.mail.NomeFileEml,
+                                                                    .Oggetto = e.mail.Oggetto,
+                                                                    .AnnoProtocollo = e.mail.AnnoProtocollo,
+                                                                    .NumeroProtocollo = e.mail.NumeroProtocollo,
+                                                                    .PercorsoRelativo = e.mail.PercorsoRelativo,
+                                                                    .Tipologia = "2",
+                                                                    .IdDocumentoWS = e.mail.IdDocumentoWS,
+                                                                   .IdPacchettoVersamento = e.IdPacchettoVersamento,
+                                                                   .Conservabile = e.mail.Conservabile,
+                                                                   .DataInvioRicezione = e.mail.DataInvio
+                                                            })
+
+                Return res.OrderBy(Function(o) o.NumeroProtocollo).ThenBy(Function(o) o.AnnoProtocollo).ToList
+
+            End If
+        Catch ex As Exception
+            ParsecUtility.Utility.MessageBox("Riscontrati problemi: " & ex.Message, False)
+            Return New List(Of MailConservazione)
+        End Try
+
+
+    End Function
+
+    Private Sub SbloccaMail(ByVal item As Telerik.Web.UI.GridDataItem)
+
+        Dim cliente As ParsecAdmin.Cliente = ParsecUtility.Applicazione.ClienteCorrente
+        Dim id As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+
+        Dim emailRepository = Nothing
+        Dim email = Nothing
+        If (Me.comboTipologia.SelectedValue = "1") Then
+            emailRepository = New ParsecPro.EmailArrivoRepository
+        Else
+            emailRepository = New ParsecPro.EmailRepository
+        End If
+        email = emailRepository.GetById(id)
+
+        Try
+            Dim wsConservazione As New wsConservazione.wsConservazione
+            Dim soapCancellaDocumentoRequest = New wsConservazione.SoapCancellaDocumentoRequest
+            soapCancellaDocumentoRequest.codiceLicenza = cliente.CodLicenza
+            soapCancellaDocumentoRequest.documentoFiltro = New wsConservazione.DocumentoBaseConservazioneFiltro
+            soapCancellaDocumentoRequest.documentoFiltro.idDocumento = email.IdDocumentoWS
+            Dim soapCancellazioneDocumentoResponse = wsConservazione.cancellaDocumento(soapCancellaDocumentoRequest)
+        Catch ex As Exception
+            'NIENTE
+        End Try
+
+        email.IdDocumentoWS = Nothing
+        emailRepository.SaveChanges()
+        emailRepository.Dispose()
+        Me.infoOperazioneHidden.Value = "Sblocco E-Mail avvenuto con successo!"
+        Me.AggiornaGriglia()
+
+
+        'Dim id As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+        ''Dim emailArrivoRepository As New ParsecPro.EmailArrivoRepository
+
+        'Dim emailRepository = Nothing
+        'Dim email = Nothing
+        'If (Me.comboTipologia.SelectedValue = "1") Then
+        '    emailRepository = New ParsecPro.EmailArrivoRepository
+        'Else
+        '    emailRepository = New ParsecPro.EmailRepository
+        'End If
+        'email = emailRepository.GetById(id)
+
+        'Try
+        '    Dim wsConservazione As New wsConservazione.wsConservazione
+
+        '    Dim soapGetDocumentoRequest As New wsConservazione.SoapGetDocumentoRequest
+        '    soapGetDocumentoRequest.codiceLicenza = Me.Cliente.CodLicenza
+        '    Dim wsFiltroDocumento As New wsConservazione.DocumentoBaseConservazioneFiltro
+        '    wsFiltroDocumento.idDocumento = email.IdDocumentoWS
+        '    soapGetDocumentoRequest.documentoFiltro = wsFiltroDocumento
+
+        '    Dim soapDocumentoBaseResponse = wsConservazione.getDocumento(soapGetDocumentoRequest)
+        '    If (soapDocumentoBaseResponse.messaggioErrore = "") Then
+        '        If (soapDocumentoBaseResponse.ListaDocumentiBase(0).idPacchettoVersamento.HasValue) Then
+        '            Throw New Exception("E-Mail già impacchettata: impossibile cancellarla: " & soapDocumentoBaseResponse.messaggioErrore)
+        '        Else
+        '            Dim soapCancellaDocumentoRequest = New wsConservazione.SoapCancellaDocumentoRequest
+        '            soapCancellaDocumentoRequest.codiceLicenza = Me.Cliente.CodLicenza
+        '            soapCancellaDocumentoRequest.documentoFiltro = wsFiltroDocumento
+        '            Dim soapCancellazioneDocumentoResponse = wsConservazione.cancellaDocumento(soapCancellaDocumentoRequest)
+        '            If (soapCancellazioneDocumentoResponse.messaggioErrore <> "") Then
+        '                Throw New Exception(soapDocumentoBaseResponse.messaggioErrore)
+        '            Else
+        '                email.IdDocumentoWS = Nothing
+        '                emailRepository.SaveChanges()
+        '                Me.infoOperazioneHidden.Value = "Sblocco E-Mail avvenuto con successo!"
+        '                Me.AggiornaGriglia()
+        '            End If
+        '        End If
+        '    Else
+        '        email.IdDocumentoWS = Nothing
+        '        emailRepository.SaveChanges()
+        '        Me.AggiornaGriglia()
+        '        Throw New Exception(soapDocumentoBaseResponse.messaggioErrore)
+        '    End If
+        '    emailRepository.Dispose()
+        'Catch ex As Exception
+        '    ParsecUtility.Utility.MessageBox(ex.Message, False)
+        '    emailRepository.Dispose()
+        'End Try
+
+    End Sub
+
+    'Public Function GetViewEmailArrivate(ByVal filtro As MailConservazioneFiltro) As List(Of MailConservazione)
+
+    '    Dim emailArrivoRepository As New ParsecPro.EmailArrivoRepository
+    '    Dim queryBase = emailArrivoRepository.GetQuery
+
+    '    Dim regitrazioniProtocollo = (New ParsecPro.RegistrazioniRepository()).GetQuery
+
+    '    If Not filtro Is Nothing Then
+
+    '        '***************************************************************************************************
+    '        '3) Filtro Cancellata
+    '        '***************************************************************************************************
+    '        If filtro.Cancellata.HasValue Then
+    '            queryBase = queryBase.Where(Function(c) c.Cancellata = filtro.Cancellata.Value)
+    '        End If
+    '        '***************************************************************************************************
+
+    '        '***************************************************************************************************
+    '        '4) Filtro Protocollata
+    '        '***************************************************************************************************
+    '        If filtro.Protocollata.HasValue Then
+    '            queryBase = queryBase.Where(Function(c) c.Lavorata = filtro.Protocollata.Value)
+    '        End If
+    '        '***************************************************************************************************
+
+    '        '***************************************************************************************************
+    '        '5) Filtro DataInizio
+    '        '***************************************************************************************************
+    '        If filtro.DataInizio.HasValue Then
+    '            Dim d As Date = filtro.DataInizio.Value
+    '            Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 0, 0, 0, 0)
+    '            queryBase = queryBase.Where(Function(c) c.DataArrivo >= newDate)
+    '        End If
+    '        '***************************************************************************************************
+
+    '        '***************************************************************************************************
+    '        '6) Filtro DataFine
+    '        '***************************************************************************************************
+    '        If filtro.DataFine.HasValue Then
+    '            Dim d As Date = filtro.DataFine.Value
+    '            Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 23, 59, 59, 999)
+    '            queryBase = queryBase.Where(Function(c) c.DataArrivo <= newDate)
+    '        End If
+    '        '***************************************************************************************************
+
+    '        '***************************************************************************************************
+    '        '6) Filtro Id
+    '        '***************************************************************************************************
+    '        If filtro.Id.HasValue Then
+    '            queryBase = queryBase.Where(Function(c) c.Id = filtro.Id)
+    '        End If
+    '        '***************************************************************************************************
+
+    '    End If
+
+
+    '    Dim view = From email In queryBase.AsEnumerable
+    '               Join registrazione In regitrazioniProtocollo On registrazione.Id Equals email.IdRegistrazione
+    '               Where Not email.PercorsoRelativo Is Nothing And Not email.IdRegistrazione Is Nothing
+    '               Select email, registrazione
+
+    '    Dim ret = From e In view
+    '                Select New MailConservazione With
+    '                   {
+    '                       .Data = e.email.DataArrivo,
+    '                       .Id = e.email.Id,
+    '                       .IdUtenteLavorazione = e.email.IdUtenteLavorazione,
+    '                       .MittenteDestinatario = e.email.Mittente,
+    '                       .NomeFileEml = e.email.NomeFileEml,
+    '                       .Oggetto = e.email.Oggetto,
+    '                       .DataProtocollo = e.registrazione.DataOraRegistrazione,
+    '                       .NumeroProtocollo = e.registrazione.NumeroProtocollo,
+    '                       .PercorsoRelativo = e.email.PercorsoRelativo,
+    '                       .Tipologia = e.email.Tipo,
+    '                       .IdDocumentoWS = e.email.IdDocumentoWS,
+    '                       .IdRegistrazioneProtocollo = e.registrazione.Id
+    '                    }
+
+    '    Return ret.OrderBy(Function(c) c.Data).ToList
+
+    'End Function
+
+    'Public Function GetViewEmailPartite(ByVal filtro As MailConservazioneFiltro) As List(Of MailConservazione)
+
+    '    Dim emailPartenzaRepository As New ParsecPro.EmailRepository
+    '    Dim queryBase = emailPartenzaRepository.GetQuery
+
+    '    Dim regitrazioniProtocollo = (New ParsecPro.RegistrazioniRepository()).GetQuery()
+
+    '    If Not filtro Is Nothing Then
+
+    '        '***************************************************************************************************
+    '        '3) Filtro Cancellata
+    '        '***************************************************************************************************
+    '        ''If filtro.Cancellata.HasValue Then
+    '        ''    queryBase = queryBase.Where(Function(c) c.Cancellata = filtro.Cancellata.Value Or ((Not filtro.Cancellata) And c.Cancellata Is Nothing))
+    '        ''End If
+    '        '***************************************************************************************************
+
+    '        '***************************************************************************************************
+    '        '4) Filtro Protocollata
+    '        '***************************************************************************************************
+    '        ''If filtro.Protocollata.HasValue Then
+    '        ''    queryBase = queryBase.Where(Function(c) c.AnnoProtocollo.HasValue And c.NumeroProtocollo.HasValue)
+    '        ''End If
+    '        '***************************************************************************************************
+
+    '        '***************************************************************************************************
+    '        '5) Filtro DataInizio
+    '        '***************************************************************************************************
+    '        If filtro.DataInizio.HasValue Then
+    '            Dim d As Date = filtro.DataInizio.Value
+    '            Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 0, 0, 0, 0)
+    '            queryBase = queryBase.Where(Function(c) c.DataInvio >= newDate)
+    '        End If
+    '        '***************************************************************************************************
+
+    '        '***************************************************************************************************
+    '        '6) Filtro DataFine
+    '        '***************************************************************************************************
+    '        If filtro.DataFine.HasValue Then
+    '            Dim d As Date = filtro.DataFine.Value
+    '            Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 23, 59, 59, 999)
+    '            queryBase = queryBase.Where(Function(c) c.DataInvio <= newDate)
+    '        End If
+    '        '***************************************************************************************************
+
+    '        '***************************************************************************************************
+    '        '6) Filtro Id
+    '        '***************************************************************************************************
+    '        If filtro.Id.HasValue Then
+    '            queryBase = queryBase.Where(Function(c) c.Id = filtro.Id)
+    '        End If
+    '        '***************************************************************************************************
+
+    '    End If
+
+
+    '    Dim view = From email In queryBase.AsEnumerable
+    '               Join registrazione In regitrazioniProtocollo On registrazione.NumeroProtocollo Equals email.NumeroProtocollo And registrazione.DataImmissione.Value.Year Equals email.AnnoProtocollo
+    '               Select email, registrazione
+
+
+    '    Dim ret = From e In view
+    '                Select New MailConservazione With
+    '                   {
+    '                      .Data = e.email.DataInvio,
+    '                       .Id = e.email.Id,
+    '                       .IdUtenteLavorazione = e.email.IdUtente,
+    '                       .MittenteDestinatario = e.email.Destinatari,
+    '                       .NomeFileEml = e.email.NomeFileEml,
+    '                       .Oggetto = e.email.Oggetto,
+    '                       .DataProtocollo = e.registrazione.DataOraRegistrazione,
+    '                       .NumeroProtocollo = e.registrazione.NumeroProtocollo,
+    '                       .PercorsoRelativo = e.email.PercorsoRelativo,
+    '                       .Tipologia = "2",
+    '                       .IdDocumentoWS = e.email.IdDocumentoWS,
+    '                      .IdRegistrazioneProtocollo = e.registrazione.Id
+    '                    }
+
+    '    Return ret.OrderBy(Function(c) c.Data).ToList
+
+    'End Function
+
+    Private Sub DownloadFile(ByVal item As Telerik.Web.UI.GridDataItem)
+
+        Dim filename As String = item.OwnerTableView.DataKeyValues(item.ItemIndex)("NomeFileEml")
+
+        If (filename.Contains("Prot_")) Then
+            filename = filename.Substring(5)
+        End If
+
+        Dim pathRelativo As String = item.OwnerTableView.DataKeyValues(item.ItemIndex)("PercorsoRelativo")
+
+        Dim percorsoMail As String = ""
+        If (Me.comboTipologia.SelectedValue = "1") Then
+            percorsoMail = ParsecAdmin.WebConfigSettings.GetKey("PostaImportata") & pathRelativo & filename
+        Else
+            percorsoMail = ParsecAdmin.WebConfigSettings.GetKey("PostaInviata") & pathRelativo & filename
+        End If
+
+        Dim file As New IO.FileInfo(percorsoMail)
+        If file.Exists Then
+
+            'If file.Extension.ToLower = ".eml" Then
+            'Session("EmailAttachmentFullName") = file.FullName
+
+            'Dim script As New Text.StringBuilder
+            'script.AppendLine("<script language='javascript'>")
+            'script.AppendLine("ShowPanel();hide=false;")
+            'script.AppendLine("</script>")
+            'ParsecUtility.Utility.RegisterScript(script, False)
+            'Me.AnteprimaEmail(file.FullName)
+            'Else
+            Session("AttachmentFullName") = file.FullName
+            Dim pageUrl As String = "~/UI/Amministrazione/pages/user/DownloadPage.aspx"
+            ParsecUtility.Utility.PageReload(pageUrl, False)
+            'End If
+
+        Else
+            ParsecUtility.Utility.MessageBox("La E-mail selezionata non esiste!", False)
+        End If
+        ' End If
+    End Sub
+
+    Protected Sub comboTipologia_SelectedIndexChanged(sender As Object, e As Telerik.Web.UI.RadComboBoxSelectedIndexChangedEventArgs) Handles comboTipologia.SelectedIndexChanged
+        If (Me.comboTipologia.SelectedValue = "1") Then
+            'mail in arrivo
+            Me.PannelloVisibilita.Visible = False
+            Me.cmbConservabilita.SelectedValue = "0"
+        Else
+            Me.PannelloVisibilita.Visible = True
+            Me.cmbConservabilita.SelectedValue = "0"
+        End If
+        Me.chkDaInviare.Checked = True
+        Me.chkArchiviate.Checked = False
+        Me.chkInviate.Checked = False
+        Me.AggiornaGriglia()
+    End Sub
+
+#End Region
+
+#Region "CONSERVAZIONE MASSIVA"
+
+    Private Function isAlive() As Boolean
+        Try
+            Dim wsConservazione As New wsConservazione.wsConservazione
+            Return wsConservazione.isAlive
+        Catch ex As Exception
+            Return False
+        End Try
+    End Function
+
+    Protected Sub ConservaMailImageButton_Click(sender As Object, e As System.Web.UI.ImageClickEventArgs) Handles ConservaMailImageButton.Click
+        Dim sb As New StringBuilder
+
+        Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+
+
+        If Not isAlive() Then
+            sb.AppendLine("Connessione col Modulo Archivio non trovata.")
+        Else
+            Dim count = Me.MailGridView.SelectedItems.Count
+            Dim context = RadProgressContext.Current
+            context.PrimaryTotal = count.ToString
+            Dim i As Integer = 0
+
+            Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+
+            Dim getEnteSoapRequest As New wsConservazione.SoapGetEnteConservatoreRequest
+            getEnteSoapRequest.codiceLicenza = Cliente.CodLicenza
+            Dim enteConservatoreAttivo = wsConservazioneSoap.getEnteConservatoreAttivo(getEnteSoapRequest)
+            If (enteConservatoreAttivo.messaggioErrore <> String.Empty) Then
+                ParsecUtility.Utility.MessageBox(enteConservatoreAttivo.messaggioErrore, False)
+                Exit Sub
+            End If
+
+            For Each selectedItem As GridDataItem In Me.MailGridView.SelectedItems
+                i += 1
+                context.PrimaryValue = i.ToString
+
+                Dim percentCompleted = CInt((0.5F + ((100.0F * i) / count)))
+
+                context.PrimaryPercent = percentCompleted.ToString
+
+                If Not Response.IsClientConnected Then
+                    Exit For
+                End If
+
+                Dim idSelezionato As Integer = selectedItem.OwnerTableView.DataKeyValues(selectedItem.ItemIndex)("Id")
+
+                If (idSelezionato > 0) Then
+
+                    'Dim filtro As New MailConservazioneFiltro
+                    'filtro.Id = idSelezionato
+
+                    Dim percorsoMail As String = ""
+                    Dim emailRepository = Nothing
+                    Dim mail As New MailConservazione
+                    mail = Me.ListaMail.Where(Function(w) w.Id = idSelezionato).FirstOrDefault
+
+                    If (Me.comboTipologia.SelectedValue = "1") Then
+                        'mail = Me.GetViewEmailArrivate(filtro).FirstOrDefault
+                        emailRepository = New ParsecPro.EmailArrivoRepository
+                    Else
+                        'mail = Me.GetViewEmailPartite(filtro).FirstOrDefault
+                        emailRepository = New ParsecPro.EmailRepository
+                    End If
+
+
+                    If (Not mail Is Nothing) Then
+
+                        Dim registrazioneRep As New ParsecPro.RegistrazioniRepository
+                        'Dim registrazione = registrazioneRep.GetById(mail.IdRegistrazioneProtocollo)
+                        Dim registrazione = registrazioneRep.GetQuery.Where(Function(w) w.Annullato = False And w.Modificato = False And w.NumeroProtocollo = mail.NumeroProtocollo And w.DataImmissione.Value.Year = mail.AnnoProtocollo).FirstOrDefault
+
+                        Dim destinanari As String = ""
+
+
+                        If (Me.comboTipologia.SelectedValue = "1") Then
+                            'arrivo
+                            For Each destinatario In registrazione.Destinatari.Where(Function(w) w.Interno = True)
+                                destinanari = destinanari & destinatario.Cognome & "; "
+                            Next
+                        Else
+                            'partenza
+                            'se ci sono interni = false prendo quelli altrimenti prendo quelli con interno = true
+                            If (registrazione.Destinatari.Where(Function(w) w.Interno = False).Count > 0) Then
+                                For Each destinatario In registrazione.Destinatari.Where(Function(w) w.Interno = False)
+                                    destinanari = destinanari & destinatario.Cognome & " " & destinatario.Nome & " " & destinatario.CodiceFiscalePartitaIva & ";"
+                                Next
+                            Else
+                                For Each destinatario In registrazione.Destinatari.Where(Function(w) w.Interno = True)
+                                    destinanari = destinanari & destinatario.Cognome & " " & destinatario.Nome & " " & destinatario.CodiceFiscalePartitaIva & ";"
+                                Next
+                            End If
+
+                        End If
+
+                        If destinanari <> "" Then
+                            destinanari = destinanari.Substring(0, destinanari.Length - 2)
+                        End If
+
+
+                        registrazioneRep.Dispose()
+
+                        Dim nomeFileEml = mail.NomeFileEml
+
+                        If nomeFileEml.Contains("Prot_") Then
+                            nomeFileEml = nomeFileEml.Substring(5)
+                        End If
+
+                        Dim fullPathSrc As String = ""
+                        If (Me.comboTipologia.SelectedValue = "1") Then
+                            fullPathSrc = ParsecAdmin.WebConfigSettings.GetKey("PostaImportata") & mail.PercorsoRelativo & nomeFileEml
+                        Else
+                            fullPathSrc = ParsecAdmin.WebConfigSettings.GetKey("PostaInviata") & mail.PercorsoRelativo & nomeFileEml
+                        End If
+
+                        If IO.File.Exists(fullPathSrc) Then
+
+                            'Dim utenteRepositiry As New ParsecAdmin.UserRepository
+                            ' Dim utente = utenteRepositiry.GetUserById(mail.IdUtenteLavorazione).FirstOrDefault
+                            'utenteRepositiry.Dispose()
+                            'If utente Is Nothing Then
+                            Dim utente = ParsecUtility.Applicazione.UtenteCorrente
+                            'End If
+
+                            Dim tipoEmail As ParsecPro.Pop3.Header.TipologiaEmail = CType(mail.Tipologia, ParsecPro.Pop3.Header.TipologiaEmail)
+                            Dim descrizioneTipoMail = ""
+                            Select Case tipoEmail
+                                Case ParsecPro.Pop3.Header.TipologiaEmail.Email_Normale
+                                    descrizioneTipoMail = "Email"
+                                Case ParsecPro.Pop3.Header.TipologiaEmail.Email_PEC
+                                    descrizioneTipoMail = "PEC"
+                                Case ParsecPro.Pop3.Header.TipologiaEmail.Email_PEC_Anomalia
+                                    descrizioneTipoMail = "Anomalie"
+                                Case ParsecPro.Pop3.Header.TipologiaEmail.PEC_Ricevuta_Accettazione
+                                    descrizioneTipoMail = "Ricevuta Accettazione / Ricevuta Avvenuta Consegna"
+                                Case Else
+                                    descrizioneTipoMail = "Altri tipi di Ricevute"
+                            End Select
+
+                            Dim metaDatoMail As New wsConservazione.MetaDatoMail
+                            metaDatoMail.TipoDocumento = "MAIL"
+                            metaDatoMail.idDocumentoSep = mail.Id
+                            metaDatoMail.idModuloSep = ParsecAdmin.TipoModulo.PRO
+                            metaDatoMail.FileName = nomeFileEml
+                            metaDatoMail.DataChiusura = Now
+                            metaDatoMail.DataDocumento = mail.DataInvioRicezione
+                            metaDatoMail.DataProtocollo = registrazione.DataImmissione
+                            metaDatoMail.NumeroProtocollo = mail.NumeroProtocollo
+
+                            If (Me.comboTipologia.SelectedValue = "1") Then
+                                metaDatoMail.ArrivoPartenza = "ARRIVO"
+                            Else
+                                metaDatoMail.ArrivoPartenza = "PARTENZA"
+                            End If
+                            metaDatoMail.Tipologia = descrizioneTipoMail
+                            metaDatoMail.Referenti = mail.MittenteDestinatario
+                            metaDatoMail.Oggetto = mail.Oggetto
+                            metaDatoMail.Informazioni = mail.Oggetto
+
+                            metaDatoMail.DestinatarioDocumento = destinanari
+                            metaDatoMail.SoggettoProduttoreDocumento = utente.Cognome + ", " + utente.Nome + If(utente.CodiceFiscale <> "", ", " + utente.CodiceFiscale, "")
+
+                            Dim fileByte = IO.File.ReadAllBytes(fullPathSrc)
+                            Select Case enteConservatoreAttivo.ListaEntiConservatori(0).algoritmoImpronta.ToUpper
+                                Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                                    'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                                    'metaDatoMail.AlgoritmoImpronta = ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA_1
+                                    metaDatoMail.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByte)
+                                    'metaDatoMail.Impronta = BitConverter.ToString(metaDatoMail.ImprontaFile).Replace("-", "")
+                                    'Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA_256
+                                    'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                                Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA256
+                                    'metaDatoMail.AlgoritmoImpronta = ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA_256
+                                    metaDatoMail.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByte)
+                                    'metaDatoMail.Impronta = BitConverter.ToString(metaDatoMail.ImprontaFile).Replace("-", "")
+                                Case Else
+                                    'ParsecCSD.Log4NetSetupLivello.SetupLivelloLog(Log)
+                                    'Log.Warn("calcoloImpronta():  non riscontrato alcun Ente Conservatore tra quelli ammessi!")
+                                    Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+                            End Select
+                            metaDatoMail.AlgoritmoImpronta = enteConservatoreAttivo.ListaEntiConservatori(0).algoritmoImpronta.ToUpper
+
+                            Dim metaDatoMailSoap As New wsConservazione.SoapConservaMailRequest
+                            metaDatoMailSoap.codiceLicenza = Me.Cliente.CodLicenza
+                            metaDatoMailSoap.metaDatoMail = metaDatoMail
+                            'metaDatoMailSoap.file = IO.File.ReadAllBytes(fullPathSrc)
+                            metaDatoMailSoap.file = Nothing 'IO.File.ReadAllBytes(pathDownload)
+                            metaDatoMailSoap.sourcePath = fullPathSrc
+
+                            Dim documentoConservato = wsConservazioneSoap.conservaMail(metaDatoMailSoap)
+
+                            If (documentoConservato.messaggioErrore <> "") Then
+                                sb.AppendLine("La E-Mail con Id. " & idSelezionato & " non è stata inviata per il seguente motivo:" & vbCrLf & documentoConservato.messaggioErrore)
+                            Else
+                                'salvo l'id del documento del Sistema Archivio
+                                Dim mailToUpdate = emailRepository.GetById(idSelezionato)
+                                mailToUpdate.IdDocumentoWS = documentoConservato.ListaDocumentiBase(0).idDocumento
+                                emailRepository.SaveChanges()
+                            End If
+                        Else
+                            sb.AppendLine("La E-Mail con Id. " & idSelezionato & " non è stata inviata per il seguente motivo:" & vbCrLf & " file " & nomeFileEml & " non trovato!")
+                        End If
+
+
+                    End If
+
+                End If
+
+
+            Next
+
+            context.OperationComplete = True
+        End If
+
+
+        If sb.Length = 0 Then
+            Me.infoOperazioneHidden.Value = "Invio al Modulo Archivio concluso con successo!"
+        Else
+            ParsecUtility.Utility.MessageBox(sb.ToString, False)
+        End If
+
+        Me.AggiornaGriglia()
+
+    End Sub
+
+    Private Sub RipristinaBloccaMail(ByVal item As Telerik.Web.UI.GridDataItem)
+
+        Try
+            Dim idEmail As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+
+            Dim emailRepository As New ParsecPro.EmailRepository
+            Dim email = emailRepository.GetById(idEmail)
+
+            email.Conservabile = Not email.Conservabile
+
+            emailRepository.SaveChanges()
+            emailRepository.Dispose()
+            Me.infoOperazioneHidden.Value = "Operazione avvenuta con successo!"
+            Me.AggiornaGriglia()
+
+        Catch ex As Exception
+            ParsecUtility.Utility.MessageBox("Riscontrati problemi: " & ex.Message, False)
+        End Try
+        
+
+    End Sub
+
+#End Region
+
+    Protected Sub chkDaInviare_CheckedChanged(sender As Object, e As System.EventArgs) Handles chkDaInviare.CheckedChanged
+        If (Me.chkDaInviare.Checked) Then
+            Me.cmbConservabilita.Enabled = True
+        Else
+            Me.cmbConservabilita.Enabled = False
+        End If
+        Me.cmbConservabilita.SelectedValue = 0
+    End Sub
+
+End Class

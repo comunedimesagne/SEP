@@ -1,0 +1,774 @@
+﻿<%@ Page Language="VB" MasterPageFile="~/MainPage.master" AutoEventWireup="false"
+    CodeFile="FattureElettronicheAttivePage.aspx.vb" Inherits="FattureElettronicheAttivePage" %>
+
+<%@ Register Assembly="Telerik.Web.UI" Namespace="Telerik.Web.UI" TagPrefix="telerik" %>
+<%--SPDX-License-Identifier: GPL-3.0-only--%>
+<asp:Content ID="Content1" ContentPlaceHolderID="MainContent" runat="Server">
+    <script type="text/javascript">
+
+        var _backgroundElement = document.createElement("div");
+        var overlay = document.createElement("div");
+
+        var hide = true;
+
+        function OnClientClickingInvio(sender, args) {
+
+            var risposta = confirm("Le fatture selezionate saranno inviate al Modulo Archivio.\nSi vuole procedere?");
+            if (risposta == true) {
+                args.set_cancel(false);
+                return true;
+            } else {
+                args.set_cancel(true);
+                return false;
+            }
+        }
+
+        function OnClientClickingSincronizzazione(sender, args) {
+
+            var risposta = confirm("Tale procedura potrebbe impiegare qualche minuto.\nSi vuole procedere?");
+            if (risposta == true) {
+                args.set_cancel(false);
+                return true;
+            } else {
+                args.set_cancel(true);
+                return false;
+            }
+        }
+
+        function pageLoad() {
+            var manager = Sys.WebForms.PageRequestManager.getInstance();
+            manager.add_beginRequest(OnBeginRequest);
+            manager.add_endRequest(OnEndRequest);
+            $get("pageContent").appendChild(_backgroundElement);
+            $get("pageContent").appendChild(overlay);
+
+            if (hide) {
+                HidePanel();
+            } else {
+                ShowPanel();
+            }
+
+        }
+
+        function OnBeginRequest(sender, args) {
+            EnableUI(false);
+        }
+
+        function OnEndRequest(sender, args) {
+            count = 2;
+            var message = $get('<%= infoOperazioneHidden.ClientId %>').value;
+
+            if (message !== '') {
+
+                //VISUALIZZO IL MESSAGGIO
+
+                ShowMessageBox(message);
+
+                var intervallo = setInterval(function () {
+                    count = count - 1;
+                    if (count <= 0) {
+                        HideMessageBox();
+                        EnableUI(true);
+                        clearInterval(intervallo);
+
+                    }
+                }, 1000);
+
+
+
+                $get('<%= infoOperazioneHidden.ClientId %>').value = '';
+
+            } else { EnableUI(true); }
+        }
+
+
+
+        function ShowMessageBox(message) {
+
+
+            overlay.style.display = '';
+            overlay.style.position = 'absolute';
+            overlay.style.left = '0px';
+            overlay.style.top = '0px';
+            overlay.style.width = '100%';
+            overlay.style.height = '100%';
+            overlay.style.zIndex = 10000;
+            overlay.style.backgroundColor = '#09718F';
+            overlay.style.filter = "alpha(opacity=20)";
+            overlay.style.opacity = "0.2";
+
+            var messageBoxPanel = document.getElementById("messageBoxPanel");
+
+
+            with (messageBoxPanel) {
+                style.display = '';
+            }
+
+            var messageBox = document.getElementById("messageBox");
+
+            with (messageBox) {
+                style.width = '300px';
+                style.height = '40px';
+                style.backgroundColor = '#BFDBFF';
+                style.border = 'solid #4892FF 2px';
+                innerHTML = message;
+                style.color = '#00156E';
+                style.backgroundImage = 'url(/sep/Images/success.png)';
+                style.backgroundPosition = '10px center';
+                style.backgroundRepeat = 'no-repeat';
+                style.padding = '15px 10px 15px 50px';
+                style.margin = '15px 0px';
+
+            }
+
+        }
+
+        function HideMessageBox() {
+            try {
+                var messageBoxPanel = document.getElementById("messageBoxPanel");
+                messageBoxPanel.style.display = 'none';
+                overlay.style.display = 'none';
+            }
+            catch (e) { }
+        }
+
+        function EnableUI(state) {
+            if (!state) {
+                _backgroundElement.style.display = '';
+                _backgroundElement.style.position = 'absolute';
+                _backgroundElement.style.left = '0px';
+                _backgroundElement.style.top = '0px';
+
+                _backgroundElement.style.width = '100%';
+                _backgroundElement.style.height = '100%';
+
+                _backgroundElement.style.zIndex = 10000;
+
+                _backgroundElement.style.backgroundColor = '#09718F';
+                _backgroundElement.style.filter = "alpha(opacity=20)";
+                _backgroundElement.style.opacity = "0.2";
+            }
+            else {
+                _backgroundElement.style.display = 'none';
+
+            }
+        }
+
+        function HidePanel() {
+            var panel = document.getElementById("VisualizzaFatturaPanel");
+            panel.style.display = "none";
+            overlay.style.display = 'none';
+            _backgroundElement.style.display = 'none';
+        }
+
+        function ShowPanel() {
+            overlay.style.display = '';
+            var panel = document.getElementById("VisualizzaFatturaPanel");
+            panel.style.display = '';
+            panel.style.position = 'absolute';
+            overlay.style.position = 'absolute';
+            overlay.style.left = '0px';
+            overlay.style.top = '0px';
+            overlay.style.width = '100%';
+            overlay.style.height = '100%';
+            overlay.style.zIndex = 10000;
+            overlay.style.backgroundColor = '#09718F';
+            overlay.style.filter = "alpha(opacity=20)";
+            overlay.style.opacity = "0.2";
+
+            var shadow = document.getElementById("containerPanelA");
+
+            with (shadow) {
+                style.msFilter = "progid:DXImageTransform.Microsoft.Shadow(Strength=4, Direction=135, Color='#333333')";
+                style.filter = "progid:DXImageTransform.Microsoft.Shadow(Strength=4, Direction=135, Color='#333333')";
+                style.boxShadow = "3px 3px 4px #333";
+                style.mozBoxShadow = "3px 3px 4px #333";
+                style.webkitBoxShadow = "3px 3px 4px #333";
+            }
+
+        }
+
+        function printPage() {
+            var html = "<html>";
+
+            html += document.getElementById('<%= Me.pannelloFattura.ClientID %>').innerHTML;
+
+            html += "</html>";
+
+            var printWin = window.open('', '', 'left=-1000,top=-1000,width=1,height=1,toolbar=0,scrollbars=0,status  =0');
+            printWin.document.write(html);
+            printWin.document.close();
+            printWin.focus();
+            printWin.print();
+            printWin.close();
+        }
+
+        function updating(sender, args) {
+            var d = $get("progressBar");
+            d.style.display = '';
+            if (args.get_progressData() && args.get_progressData().OperationComplete == 'true') {
+                args.set_cancel(true);
+                d.style.display = 'none';
+            }
+        }
+
+    </script>
+    <asp:UpdateProgress runat="server" ID="UpdateProgress1" DisplayAfter="0">
+        <ProgressTemplate>
+            <div id="loadingOuter" style="position: absolute; width: 100%; text-align: center;
+                top: 300px; z-index: 2000000">
+                <table cellpadding="4" style="background-color: #4892FF; margin: 0 auto">
+                    <tr>
+                        <td>
+                            <div id="loadingInner" style="width: 300px; text-align: center; background-color: #BFDBFF;
+                                height: 60px">
+                                <span style="color: #00156E">Attendere prego ... </span>
+                                <br />
+                                <br />
+                                <img alt="" src="../../../../images/loading.gif" border="0">
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <div id="progressBar" style="position: absolute; width: 100%; text-align: center;
+                top: 300px; z-index: 2000000">
+                <div id="Div3" style="width: 310px; text-align: center; background-color: #BFDBFF;
+                    margin: 0 auto">
+                    <telerik:RadProgressArea OnClientProgressUpdating="updating" Skin="Office2007" ID="RadProgressArea1"
+                        runat="server" ProgressIndicators="RequestSize,TotalProgressPercent,TotalProgressBar"
+                        HeaderText="Esportazione in corso ...">
+                        <Localization Total="Totale:" Uploaded="Completato:" />
+                    </telerik:RadProgressArea>
+                </div>
+            </div>
+        </ProgressTemplate>
+    </asp:UpdateProgress>
+    <asp:UpdatePanel ID="Pannello" runat="server">
+        <ContentTemplate>
+            <div id="pageContent">
+                <telerik:RadFormDecorator ID="RadFormDecorator1" DecoratedControls="all" runat="server"
+                    DecorationZoneID="ZoneID1" Skin="Web20"></telerik:RadFormDecorator>
+                <telerik:RadFormDecorator ID="RadFormDecorator2" DecoratedControls="all" runat="server"
+                    DecorationZoneID="ZoneID2" Skin="Web20"></telerik:RadFormDecorator>
+                <center>
+                    <telerik:RadProgressManager ID="Radprogressmanager1" runat="server" Skin="Office2007" />
+                    <table width="1100px" cellpadding="5" cellspacing="5" border="0">
+                        <tr>
+                            <td>
+                                <table class="ContainerWrapper" border="0" cellpadding="2" cellspacing="0" width="100%">
+                                    <tr>
+                                        <td>
+                                            <table cellpadding="0" cellspacing="0" style="width: 100%">
+                                                <tr>
+                                                    <td style="background-color: #BFDBFF; padding: 4px; border-bottom: 1px solid  #9ABBE8;
+                                                        border-top: 1px solid  #9ABBE8; height: 25px">
+                                                        &nbsp;<asp:Label ID="TitoloLabel" runat="server" Style="color: #00156E" Font-Bold="True"
+                                                            Text="Filtro Fatture Elettroniche" CssClass="Etichetta" />
+                                                    </td>
+                                                    <td align="center" style="width: 30px; background-color: #BFDBFF; border-bottom: 1px solid  #9ABBE8;
+                                                        border-top: 1px solid  #9ABBE8;">
+                                                        <asp:ImageButton ID="FiltraImageButton" runat="server" ImageUrl="~/images//search.png"
+                                                            ToolTip="Effettua la ricerca con i filtri impostati" Style="border: 0" ImageAlign="AbsMiddle" />
+                                                    </td>
+                                                    <td align="center" style="width: 30px; background-color: #BFDBFF; border-bottom: 1px solid  #9ABBE8;
+                                                        border-top: 1px solid  #9ABBE8;">
+                                                        <asp:ImageButton ID="AnnullaFiltroImageButton" Style="border: 0" runat="server" ImageUrl="~/images//cancelSearch.png"
+                                                            ToolTip="Annulla i filtri impostati" ImageAlign="AbsMiddle" />
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="ContainerMargin">
+                                            <table class="Container" cellpadding="0" cellspacing="4" width="100%" border="0">
+                                                <tr>
+                                                    <td align="center" style="height: 50px">
+                                                        <table style="width: 100%">
+                                                            <tr>
+                                                                <td style="width: 90px">
+                                                                    <asp:Label ID="DataInvioInizioLabel" runat="server" CssClass="Etichetta" Text="Inviata da" />
+                                                                </td>
+                                                                <td style="width: 125px">
+                                                                    <telerik:RadDatePicker ID="DataInvioInizioTextBox" Skin="Office2007" Width="110px"
+                                                                        runat="server" MinDate="1753-01-01" ToolTip="Data inizio ricezione fattura">
+                                                                        <Calendar>
+                                                                            <SpecialDays>
+                                                                                <telerik:RadCalendarDay Repeatable="Today" Date="" ItemStyle-CssClass="rcToday" />
+                                                                            </SpecialDays>
+                                                                        </Calendar>
+                                                                        <DatePopupButton ToolTip="Apri il calendario." />
+                                                                    </telerik:RadDatePicker>
+                                                                </td>
+                                                                <td style="width: 20px">
+                                                                    <asp:Label ID="DataInvioFineLabel" runat="server" CssClass="Etichetta" Text="a" />
+                                                                </td>
+                                                                <td style="width: 125px">
+                                                                    <telerik:RadDatePicker ID="DataInvioFineTextBox" Skin="Office2007" Width="110px"
+                                                                        runat="server" MinDate="1753-01-01" ToolTip="Data fine ricezione fattura">
+                                                                        <Calendar>
+                                                                            <SpecialDays>
+                                                                                <telerik:RadCalendarDay Repeatable="Today" Date="" ItemStyle-CssClass="rcToday" />
+                                                                            </SpecialDays>
+                                                                        </Calendar>
+                                                                        <DatePopupButton ToolTip="Apri il calendario." />
+                                                                    </telerik:RadDatePicker>
+                                                                </td>
+                                                                <td>
+                                                                    <div id="ZoneID1">
+                                                                        <table style="width: 55%">
+                                                                            <tr>
+                                                                                <td>
+                                                                                    <asp:Label ID="daInviarelabel" runat="server" CssClass="Etichetta" Font-Bold="True"
+                                                                                        ForeColor="#FF9900" Text="Stato Conservazione" Width="140px" />
+                                                                                </td>
+                                                                                <td>
+                                                                                    <asp:CheckBox ID="chkDaInviare" runat="server" Checked="True" CssClass="etichetta"
+                                                                                        Text="Da inviare" ToolTip="Se selezionato permette di visualizzare solo le E-Mail da inviare al Modulo Archivio."
+                                                                                        Width="80px" />
+                                                                                </td>
+                                                                                <td>
+                                                                                    <asp:CheckBox ID="chkInviate" runat="server" Checked="True" CssClass="etichetta"
+                                                                                        Text="Inviate" ToolTip="Se selezionato permette di visualizzare solo le E-Mail inviate al Modulo Archivio e non impacchettate."
+                                                                                        Width="65px" />
+                                                                                </td>
+                                                                                <td>
+                                                                                    <asp:CheckBox ID="chkArchiviate" runat="server" Checked="True" CssClass="etichetta"
+                                                                                        Text="Archiviate" ToolTip="Se selezionato permette di visualizzare solo le E-Mail inviate al Modulo Archivio e impacchettate."
+                                                                                        Width="70px" />
+                                                                                </td>
+                                                                            </tr>
+                                                                        </table>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        </table>
+                                                    </td>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <table style="width: 100%; background-color: #BFDBFF; border: 1px solid #5D8CC9">
+                                                <tr>
+                                                    <td>
+                                                        <table style="width: 100%; background-color: #BFDBFF">
+                                                            <tr>
+                                                                <td>
+                                                                    &nbsp;<asp:Label ID="TitoloElencoFattureLabel" runat="server" Font-Bold="True" Style="width: 500px;
+                                                                        color: #00156E; background-color: #BFDBFF" Text="Elenco Fatture Elettroniche"
+                                                                        CssClass="Etichetta" />
+                                                                </td>
+                                                                <td align="center" style="width: 30;">
+                                                                    <asp:ImageButton ID="EsportaInExcelImageButton" runat="server" ImageUrl="~/images/excel16.png"
+                                                                        ToolTip="Esporta in Excel le fatture visualizzate" Style="border: 0" ImageAlign="AbsMiddle" />
+                                                                </td>
+                                                                <td align="center" style="width: 125; border-left: 0 solid #5D8CC9;">
+                                                                    <telerik:RadButton ID="NoPaging" runat="server" Text="Non Paginare" Skin="Office2007"
+                                                                        ImageAlign="AbsMiddle" Width="115px" ToolTip="Disattiva/Attiva Paginazione">
+                                                                        <Icon PrimaryIconUrl="~/images/Next.png" PrimaryIconLeft="5px" />
+                                                                    </telerik:RadButton>
+                                                                </td>
+                                                                <td align="center" style="width: 40px">
+                                                                    <telerik:RadButton ID="SincronizzaButton" runat="server" Text="Sincronizza" Width="120px"
+                                                                        OnClientClicking="OnClientClickingSincronizzazione" Skin="Office2007" ToolTip="Sincronizza le fatture selezionate con il protocollo">
+                                                                        <Icon PrimaryIconUrl="../../../../images/arrow-transfer16.png" PrimaryIconLeft="5px" />
+                                                                    </telerik:RadButton>
+                                                                </td>
+                                                                <td align="center" style="width: 40px">
+                                                                    <telerik:RadButton ID="InviaButton" runat="server" Text="Invia" Width="100px" OnClientClicking="OnClientClickingInvio"
+                                                                        Skin="Office2007" ToolTip="Invia le fatture selezionate al modulo Archivio">
+                                                                        <Icon PrimaryIconUrl="../../../../images/export.png" PrimaryIconLeft="5px" />
+                                                                    </telerik:RadButton>
+                                                                </td>
+                                                            </tr>
+                                                        </table>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>
+                                                        <div id="ZoneID2" style="overflow: auto; height: 610px; width: 100%; background-color: #FFFFFF;
+                                                            border: 0px solid #5D8CC9;">
+                                                            <telerik:RadGrid ID="rgrdFattureEmesse" runat="server" AllowPaging="True" AutoGenerateColumns="False"
+                                                                CellSpacing="0" Culture="it-IT" GridLines="None" PageSize="18" Skin="Office2007"
+                                                                Width="99.8%" AllowFilteringByColumn="True" AllowSorting="True" AllowMultiRowSelection="True">
+                                                                <GroupingSettings CaseSensitive="False" />
+                                                                <MasterTableView DataKeyNames="Id, IdRegistrazione, IdDocumentoWS">
+                                                                    <CommandItemSettings ExportToPdfText="Export to PDF" />
+                                                                    <RowIndicatorColumn FilterControlAltText="Filter RowIndicator column">
+                                                                        <HeaderStyle Width="20px" />
+                                                                    </RowIndicatorColumn>
+                                                                    <ExpandCollapseColumn FilterControlAltText="Filter ExpandColumn column">
+                                                                        <HeaderStyle Width="20px" />
+                                                                    </ExpandCollapseColumn>
+                                                                    <Columns>
+                                                                        <telerik:GridTemplateColumn UniqueName="CheckBoxTemplateColumn" HeaderTooltip="Seleziona tutte le fatture elettroniche"
+                                                                            AllowFiltering="False">
+                                                                            <HeaderTemplate>
+                                                                                <div style="width: 16px; height: 16px" align="center">
+                                                                                    <asp:CheckBox ID="SelectAllCheckBox" OnCheckedChanged="ToggleSelectedState" AutoPostBack="True"
+                                                                                        runat="server" />
+                                                                                </div>
+                                                                            </HeaderTemplate>
+                                                                            <ItemTemplate>
+                                                                                <asp:CheckBox ID="SelectCheckBox" OnCheckedChanged="ToggleRowSelection" AutoPostBack="True"
+                                                                                    runat="server" ToolTip="Seleziona fattura elettronica da esportare" />
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+                                                                        <telerik:GridTemplateColumn DataField="Conservabile" UniqueName="Conservabile">
+                                                                            <ItemStyle Width="30px" HorizontalAlign="Center" />
+                                                                            <ItemTemplate>
+                                                                                <asp:ImageButton ID="ImageButton1" runat="server" /></ItemTemplate>
+                                                                            <FilterTemplate>
+                                                                                <telerik:RadComboBox ID="rcbConservabile" runat="server" OnClientSelectedIndexChanged="ConservabileIndexChanged"
+                                                                                    OnClientLoad="ConservabileLoad" Width="30px">
+                                                                                    <Items>
+                                                                                        <telerik:RadComboBoxItem Selected="true" ToolTip="Tutti" />
+                                                                                        <telerik:RadComboBoxItem Value="AC" BackColor="Green" />
+                                                                                        <telerik:RadComboBoxItem Value="NI" BackColor="Blue" />
+                                                                                        <telerik:RadComboBoxItem Value="NO" BackColor="Red" />
+                                                                                        <telerik:RadComboBoxItem Value="SI" BackColor="Orange" />
+                                                                                    </Items>
+                                                                                </telerik:RadComboBox>
+                                                                                <telerik:RadScriptBlock ID="RadScriptBlock1" runat="server">
+                                                                                    <script type="text/javascript">
+                                                                                        function ConservabileIndexChanged(sender, args) {
+                                                                                            var tableView = $find("<%# TryCast(Container,GridItem).OwnerTableView.ClientID %>");
+                                                                                            var filtro = args.get_item().get_value();
+                                                                                            tableView.filter("Conservabile", filtro, "EqualTo");
+                                                                                        }
+                                                                                        function ConservabileLoad(sender) {
+                                                                                            //Aggiorno il colore
+                                                                                            var inputElement = sender.get_inputDomElement();
+                                                                                            var colore = sender.get_selectedItem().get_value()
+                                                                                            switch (colore) {
+                                                                                                case "NO":
+                                                                                                    inputElement.style.backgroundColor = "red";
+                                                                                                    inputElement.title = "Scartata";
+                                                                                                    break;
+                                                                                                case "NI":
+                                                                                                    inputElement.style.backgroundColor = "blue";
+                                                                                                    inputElement.title = "Dubbia";
+                                                                                                    break;
+                                                                                                case "AC":
+                                                                                                    inputElement.style.backgroundColor = "green";
+                                                                                                    inputElement.title = "Accettazione Committente";
+                                                                                                    break;
+                                                                                                case "SI":
+                                                                                                    inputElement.style.backgroundColor = "orange";
+                                                                                                    inputElement.title = "Decorrenza Termini";
+                                                                                                    break;
+                                                                                                case "":
+                                                                                                    inputElement.style.backgroundColor = "orange";
+                                                                                                    inputElement.title = "Decorrenza Termini";
+                                                                                                    break;
+                                                                                                default:
+                                                                                                    inputElement.title = "Tutti";
+                                                                                            }
+                                                                                        }
+                                                                                    </script>
+                                                                                </telerik:RadScriptBlock>
+                                                                            </FilterTemplate>
+                                                                        </telerik:GridTemplateColumn>
+                                                                        <telerik:GridBoundColumn DataField="Id" DataType="System.Int32" FilterControlAltText="Filter Id column"
+                                                                            HeaderText="Id" ReadOnly="True" SortExpression="Id" UniqueName="Id" Visible="False">
+                                                                        </telerik:GridBoundColumn>
+                                                                        <telerik:GridBoundColumn AllowFiltering="False" DataField="NumeroFattura" DataType="System.Int32"
+                                                                            FilterControlAltText="Filter NumeroFattura column" HeaderText="Numero" SortExpression="NumeroFattura"
+                                                                            UniqueName="NumeroFattura">
+                                                                        </telerik:GridBoundColumn>
+                                                                        <telerik:GridBoundColumn AllowFiltering="False" DataField="DataFattura" DataFormatString="{0:dd/MM/yyyy}"
+                                                                            FilterControlAltText="Filter DataFattura column" HeaderText="Data" SortExpression="DataFattura"
+                                                                            UniqueName="DataFattura" DataType="System.DateTime">
+                                                                        </telerik:GridBoundColumn>
+                                                                        <telerik:GridBoundColumn DataField="Oggetto" DataType="System.Int32" FilterControlAltText="Filter Oggetto column"
+                                                                            HeaderText="Oggetto" SortExpression="Oggetto" UniqueName="Oggetto" Visible="False">
+                                                                        </telerik:GridBoundColumn>
+                                                                        <telerik:GridTemplateColumn AndCurrentFilterFunction="Contains" ItemStyle-Width="400px"
+                                                                            HeaderStyle-Width="400px" AutoPostBackOnFilter="True" DataField="DenominazioneCliente"
+                                                                            FilterControlAltText="Filter DenominazioneCliente column" FilterControlWidth="100%"
+                                                                            HeaderText="Cliente" ShowFilterIcon="False" SortExpression="DenominazioneCliente"
+                                                                            UniqueName="DenominazioneCliente" HeaderTooltip="Cliente">
+                                                                            <ItemTemplate>
+                                                                                <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 400px;
+                                                                                    border: 0px solid red" title='<%# Replace(Eval("DenominazioneCliente"), "'", "&#039;")%>'>
+                                                                                    <%# Eval("DenominazioneCliente")%>
+                                                                                </div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+                                                                        <telerik:GridBoundColumn DataField="CFCliente" FilterControlAltText="Filter CFCliente column"
+                                                                            HeaderText="CF" SortExpression="CFCliente" UniqueName="CFCliente" Visible="False">
+                                                                        </telerik:GridBoundColumn>
+                                                                        <telerik:GridBoundColumn AllowFiltering="False" DataField="PIVACliente" DataType="System.Int32"
+                                                                            FilterControlAltText="Filter PIVACliente column" HeaderText="P.IVA" SortExpression="PIVACliente"
+                                                                            UniqueName="PIVACliente" AutoPostBackOnFilter="True" CurrentFilterFunction="EqualTo"
+                                                                            FilterControlWidth="30px" ShowFilterIcon="False">
+                                                                        </telerik:GridBoundColumn>
+                                                                        <telerik:GridTemplateColumn SortExpression="TotaleFattura" UniqueName="TotaleFattura"
+                                                                            FooterStyle-HorizontalAlign="Right" HeaderStyle-HorizontalAlign="Center" HeaderText="TotaleFattura"
+                                                                            DataField="TotaleFattura" HeaderStyle-Width="80px" ItemStyle-Width="80px" ItemStyle-HorizontalAlign="Right"
+                                                                            AutoPostBackOnFilter="True" CurrentFilterFunction="EqualTo" FilterControlWidth="100%"
+                                                                            ShowFilterIcon="False" FilterControlAltText="Filter TotaleFattura column">
+                                                                            <FilterTemplate>
+                                                                                <telerik:RadNumericTextBox ID="ImportoTextBox" runat="server" Width="100%" DbValue='<%# CType(Container,GridItem).OwnerTableView.GetColumn("TotaleFattura").CurrentFilterValue %>'
+                                                                                    ClientEvents-OnLoad="OnImportoTextBoxLoad" ClientEvents-OnKeyPress="OnImportoTextBoxKeyPressed"
+                                                                                    Skin="Office2007" />
+                                                                                <telerik:RadScriptBlock ID="RadScriptBlock4" runat="server">
+                                                                                    <script type="text/javascript">
+                                                                                        function OnImportoTextBoxKeyPressed(sender, args) {
+                                                                                            if (13 == args.get_keyCode()) {
+                                                                                                var tableView = $find("<%# CType(Container,GridItem).OwnerTableView.ClientID %>");
+                                                                                                var c = sender.get_textBoxValue();
+                                                                                                tableView.filter("TotaleFattura", c, "EqualTo");
+                                                                                                args.set_cancel(true);
+                                                                                            }
+                                                                                        }
+
+                                                                                        // SOVRASCRIVO GLI STILI
+                                                                                        function OnImportoTextBoxLoad(sender, args) {
+                                                                                            sender.get_styles().HoveredStyle[0] = "";
+                                                                                            sender.get_styles().HoveredStyle[1] = "";
+                                                                                            sender.get_styles().FocusedStyle[0] = "";
+                                                                                            sender.get_styles().FocusedStyle[1] = "";
+                                                                                            sender.updateCssClass();
+                                                                                        }
+                                                                                    </script>
+                                                                                </telerik:RadScriptBlock>
+                                                                            </FilterTemplate>
+                                                                            <ItemTemplate>
+                                                                                <div title='<%# Eval("TotaleFattura","{0:N2}")%>' style="white-space: nowrap; overflow: hidden;
+                                                                                    text-overflow: ellipsis; width: 80px; border: 0px solid red">
+                                                                                    <%# Eval("TotaleFattura", "{0:N2}")%></div>
+                                                                            </ItemTemplate>
+                                                                        </telerik:GridTemplateColumn>
+                                                                        <telerik:GridBoundColumn AllowFiltering="False" DataField="NomeFileFattura" FilterControlAltText="Filter NomeFileFattura column"
+                                                                            HeaderText="Nome File" SortExpression="NomeFileFattura" UniqueName="NomeFileFattura"
+                                                                            Visible="False">
+                                                                        </telerik:GridBoundColumn>
+                                                                        <telerik:GridBoundColumn DataField="NumeroProtocollo" FilterControlAltText="Filter NumeroProtocollo column"
+                                                                            HeaderText="N.Prot." SortExpression="NumeroProtocollo" UniqueName="NumeroProtocollo"
+                                                                            AutoPostBackOnFilter="True" FilterControlWidth="100%" ShowFilterIcon="False">
+                                                                        </telerik:GridBoundColumn>
+                                                                        <telerik:GridBoundColumn AutoPostBackOnFilter="True" DataField="AnnoProtocollo" FilterControlAltText="Filter AnnoProtocollo column"
+                                                                            FilterControlWidth="100%" HeaderText="Anno" ShowFilterIcon="False" SortExpression="AnnoProtocollo"
+                                                                            UniqueName="AnnoProtocollo" Visible="False">
+                                                                            <HeaderStyle Width="40px" />
+                                                                        </telerik:GridBoundColumn>
+                                                                        <telerik:GridBoundColumn DataField="DataProtocollo" DataFormatString="{0:dd/MM/yyyy}"
+                                                                            FilterControlAltText="Filter DataProtocollo column" HeaderText="DataProtocollo"
+                                                                            SortExpression="DataProtocollo" UniqueName="DataProtocollo" FilterControlWidth="100%"
+                                                                            ShowFilterIcon="False">
+                                                                            <HeaderStyle Width="50px" />
+                                                                            <ItemStyle Width="50px" />
+                                                                        </telerik:GridBoundColumn>
+                                                                        <telerik:GridButtonColumn ButtonType="ImageButton" CommandName="Preview" FilterControlAltText="Filter Preview column"
+                                                                            ImageUrl="~\images\knob-search16.png" UniqueName="Preview" Text="Visualizza fattura">
+                                                                            <ItemStyle Width="20px" />
+                                                                        </telerik:GridButtonColumn>
+                                                                        <telerik:GridButtonColumn ButtonType="ImageButton" CommandName="VisualizzaProtocollo"
+                                                                            FilterControlAltText="Filter Sincronizza column" HeaderStyle-Width="20px" ImageUrl="~\images\WF_PRO.gif"
+                                                                            ItemStyle-Width="20px" Text="Visualizza la Registrazione di Protocollo" UniqueName="VisualizzaProtocollo">
+                                                                            <HeaderStyle Width="20px" />
+                                                                            <ItemStyle HorizontalAlign="Center" Width="20px" />
+                                                                        </telerik:GridButtonColumn>
+                                                                        <telerik:GridButtonColumn ButtonType="ImageButton" ConfirmText="Sei sicuro di voler sbloccare la Fattura?"
+                                                                            CommandName="SbloccaFattura" FilterControlAltText="Filter SbloccaFattura column"
+                                                                            ImageUrl="~\images\Unlock_16.png" UniqueName="SbloccaFattura" Text="Invia al modulo Archivio">
+                                                                            <ItemStyle Width="20px" />
+                                                                        </telerik:GridButtonColumn>
+                                                                    </Columns>
+                                                                    <EditFormSettings>
+                                                                        <EditColumn FilterControlAltText="Filter EditCommandColumn column">
+                                                                        </EditColumn>
+                                                                    </EditFormSettings>
+                                                                </MasterTableView>
+                                                                <FilterMenu EnableImageSprites="False">
+                                                                </FilterMenu>
+                                                                <HeaderContextMenu CssClass="GridContextMenu GridContextMenu_Default">
+                                                                </HeaderContextMenu>
+                                                            </telerik:RadGrid>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td align="center" style="background-color: #BFDBFF; padding: 4px; border-bottom: 0px solid  #9ABBE8;
+                                border-top: 1px solid  #9ABBE8; height: 25px">
+                            </td>
+                        </tr>
+                    </table>
+                </center>
+                <div id="messageBoxPanel" style="position: absolute; width: 100%; text-align: center;
+                    z-index: 2000000; display: none; top: 300px">
+                    <div id="messageBox" style="width: 300px; height: 40; text-align: center; background-color: #BFDBFF;
+                        margin: 0 auto;">
+                    </div>
+                </div>
+                <div id="VisualizzaFatturaPanel" style="position: absolute; width: 100%; text-align: center;
+                    z-index: 2000000; display: none; top: 100px">
+                    <div id="containerPanelA" style="width: 800px; text-align: center; background-color: #BFDBFF;
+                        margin: 0 auto">
+                        <table width="800px" cellpadding="5" cellspacing="5" border="0">
+                            <tr>
+                                <td>
+                                    <table class="ContainerWrapper" border="0" cellpadding="2" cellspacing="0" width="100%">
+                                        <%--  HEADER--%>
+                                        <tr>
+                                            <td style="background-color: #BFDBFF; padding: 0px; border-bottom: 1px solid  #9ABBE8;
+                                                border-top: 1px solid  #9ABBE8; height: 25px">
+                                                <table style="width: 100%">
+                                                    <tr>
+                                                        <td>
+                                                            &nbsp;
+                                                        </td>
+                                                        <td align="right">
+                                                            <img alt="Chiudi" src="../../../../images/Close.png" style="border: 0px" onclick="HidePanel();document.getElementById('<%= Me.ChiudiButton.ClientID %>').click();" />
+                                                        </td>
+                                                    </tr>
+                                                </table>
+                                            </td>
+                                        </tr>
+                                        <%-- BODY--%>
+                                        <tr>
+                                            <td class="ContainerMargin">
+                                                <table class="Container" cellpadding="0" cellspacing="4" width="100%" border="0">
+                                                    <tr>
+                                                        <td>
+                                                            <div style="overflow: auto; height: 400px; width: 100%; border: 0px solid #5D8CC9;">
+                                                                <asp:Panel ID="pannelloFattura" runat="server" Height="400px" Width="100%" Style="overflow: auto;">
+                                                                </asp:Panel>
+                                                            </div>
+                                                            <div id="GrigliaAllegatiPanel" runat="server" style="padding: 2px 0px 0px 0px;">
+                                                                <table style="width: 100%; background-color: #BFDBFF; border: 1px solid #5D8CC9">
+                                                                    <tr>
+                                                                        <td style="height: 20px">
+                                                                            <table style="width: 100%">
+                                                                                <tr>
+                                                                                    <td>
+                                                                                        <asp:Label ID="DocumentiLabel" runat="server" CssClass="Etichetta" Font-Bold="True"
+                                                                                            Style="width: 700px; color: #00156E; background-color: #BFDBFF" Text="Allegati" />
+                                                                                    </td>
+                                                                                </tr>
+                                                                            </table>
+                                                                        </td>
+                                                                    </tr>
+                                                                    <tr style="background-color: #FFFFFF">
+                                                                        <td>
+                                                                            <div style="overflow: auto; height: 100px; border: 1px solid #5D8CC9">
+                                                                                <telerik:RadGrid ID="DocumentiGridView" runat="server" ToolTip="Elenco allegati associati alla fattura elettronica"
+                                                                                    AutoGenerateColumns="False" CellSpacing="0" GridLines="None" Skin="Office2007"
+                                                                                    Width="99.8%" Culture="it-IT">
+                                                                                    <MasterTableView DataKeyNames="Id, Nomefile">
+                                                                                        <Columns>
+                                                                                            <telerik:GridTemplateColumn SortExpression="Posizione" UniqueName="Posizione" HeaderText="Posizione"
+                                                                                                DataField="Posizione" HeaderStyle-Width="60px" ItemStyle-Width="60px">
+                                                                                                <ItemTemplate>
+                                                                                                    <div title='<%# Eval("Posizione")%>' style="white-space: nowrap; overflow: hidden;
+                                                                                                        text-overflow: ellipsis; width: 60px; border: 0px solid red">
+                                                                                                        <%# Eval("Posizione")%></div>
+                                                                                                </ItemTemplate>
+                                                                                            </telerik:GridTemplateColumn>
+                                                                                            <telerik:GridTemplateColumn SortExpression="Estremi" UniqueName="Estremi" HeaderText="Estremi"
+                                                                                                DataField="Estremi" HeaderStyle-Width="230px" ItemStyle-Width="230px">
+                                                                                                <ItemTemplate>
+                                                                                                    <div title='<%# Eval("Estremi")%>' style="white-space: nowrap; overflow: hidden;
+                                                                                                        text-overflow: ellipsis; width: 230px; border: 0px solid red">
+                                                                                                        <%# Eval("Estremi")%></div>
+                                                                                                </ItemTemplate>
+                                                                                            </telerik:GridTemplateColumn>
+                                                                                            <telerik:GridTemplateColumn SortExpression="NomeFile" UniqueName="NomeFile" HeaderText="Nome file"
+                                                                                                DataField="NomeFile" HeaderStyle-Width="480px" ItemStyle-Width="480px">
+                                                                                                <ItemTemplate>
+                                                                                                    <div title='<%# Eval("NomeFile")%>' style="white-space: nowrap; overflow: hidden;
+                                                                                                        text-overflow: ellipsis; width: 480px; border: 0px solid red">
+                                                                                                        <%# Eval("NomeFile")%></div>
+                                                                                                </ItemTemplate>
+                                                                                            </telerik:GridTemplateColumn>
+                                                                                            <telerik:GridButtonColumn ButtonType="ImageButton" CommandName="Preview" FilterControlAltText="Filter Preview column"
+                                                                                                Text="Visualizza Allegato..." ImageUrl="~\images\knob-search16.png" UniqueName="Preview"
+                                                                                                HeaderStyle-Width="20px" ItemStyle-Width="20px">
+                                                                                            </telerik:GridButtonColumn>
+                                                                                        </Columns>
+                                                                                    </MasterTableView></telerik:RadGrid>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </table>
+                                            </td>
+                                        </tr>
+                                        <%-- FOOTER--%>
+                                        <tr>
+                                            <td align="center" style="background-color: #BFDBFF; padding: 4px; border-bottom: 0px solid  #9ABBE8;
+                                                border-top: 1px solid  #9ABBE8; height: 25px">
+                                                &nbsp;
+                                                <telerik:RadButton ID="ChiudiButton" runat="server" Text="Chiudi" Width="90px" Skin="Office2007"
+                                                    ToolTip="Chiudi">
+                                                    <Icon PrimaryIconUrl="../../../../images/cancel.png" PrimaryIconLeft="5px" />
+                                                </telerik:RadButton>
+                                                &nbsp; &nbsp; &nbsp;
+                                                <telerik:RadButton ID="StampaFatturaButton" runat="server" Text="Stampa" Width="90px"
+                                                    Skin="Office2007" ToolTip="Stampa Fattura">
+                                                    <Icon PrimaryIconUrl="../../../../images/Printer16.png" PrimaryIconLeft="5px" />
+                                                </telerik:RadButton>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                <table style="width: 1100px;">
+                    <tr>
+                        <td>
+                        </td>
+                    </tr>
+                </table>
+                <asp:HiddenField ID="infoOperazioneHidden" runat="server" />
+                <table style="width: 1100px; border: 1px solid #9ABBE8; text-align: center">
+                    <tr>
+                        <td>
+                            <table>
+                                <tr>
+                                    <td style="width: 80px">
+                                        <asp:Label ID="LegendaLabel" runat="server" CssClass="Etichetta" Text="Legenda :"
+                                            Font-Bold="True" ForeColor="#FF9900" />
+                                    </td>
+                                    <td>
+                                        <img alt="" src="../../../../Images/pArancio16.png" style="vertical-align: middle" />
+                                        <asp:Label ID="LegendaProtocollata" runat="server" CssClass="Etichetta" Style="text-align: center"
+                                            Text="Decorrenza Termini" Width="150px" />
+                                    </td>
+                                    <td>
+                                        <img alt="" src="../../../../Images/pVerde16.png" style="vertical-align: middle" />
+                                        <asp:Label ID="LegendaAccettata" runat="server" CssClass="Etichetta" Style="text-align: center"
+                                            Text="Accettata" Width="80px" />
+                                    </td>
+                                    <td>
+                                        <img alt="" src="../../../../Images/pRosso16.png" style="vertical-align: middle" />
+                                        <asp:Label ID="LegendaRifiutata" runat="server" CssClass="Etichetta" Style="text-align: center"
+                                            Text="Rifiutata" Width="80px" />
+                                    </td>
+                                    <td>
+                                        <img alt="" src="../../../../Images/pBlue16.png" style="vertical-align: middle" />
+                                        <asp:Label ID="LegendaConservata" runat="server" CssClass="Etichetta" Style="text-align: center"
+                                            Text="Dubbia" Width="70px" />
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </ContentTemplate>
+    </asp:UpdatePanel>
+</asp:Content>

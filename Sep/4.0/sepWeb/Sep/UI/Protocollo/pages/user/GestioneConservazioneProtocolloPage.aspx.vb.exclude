@@ -1,0 +1,1242 @@
+﻿Imports ParsecAdmin
+Imports ParsecPro
+Imports Telerik.Web.UI
+Imports System.IO
+Imports System.Net
+Imports System.Xml
+Imports System.Data.Objects
+
+'Imports System.Data.Objects
+
+Public Class FiltroProtocolloConservazione
+
+    Public Property DaInviare As Boolean = False
+    Public Property Inviati As Boolean = False
+    Public Property Archiviati As Boolean = False
+    'Public Property NonConservabili As Boolean = False
+    Public Property NonConservabili As String
+
+    Public Property DataInizio As Nullable(Of DateTime) = Nothing
+    Public Property DataFine As Nullable(Of DateTime) = Nothing
+
+End Class
+
+Public Class ProtocolloConservazione
+
+    Public Property Id As Integer
+
+    Public Property NumeroProtocollo As String
+    Public Property AnnoProtocollo As Integer
+    Public Property DescrizioneTipologiaRegistristrazione As String
+    Public Property DataImmissione As Date
+    Public Property Oggetto As String
+    Public Property ElencoReferentiEsterni As String
+    Public Property ElencoReferentiInterni As String
+
+    Public Property IdDocumentoWS As Integer?
+    Public Property IdPacchettoVersamento As Integer?
+    Public Property InviatoDaFascicolo As Boolean
+    Public Property Conservabile As Boolean
+
+End Class
+
+
+Partial Class GestioneConservazioneProtocolloPage
+    Inherits System.Web.UI.Page
+
+    Private WithEvents MainPage As MainPage
+
+#Region "PROPRIETA'"
+
+    Public Property CheckedRowCount() As Integer
+        Get
+            Return CType(Session("GestioneConservazioneProtocolloPage_CheckedRowCount"), Integer)
+        End Get
+        Set(ByVal value As Integer)
+            Session("GestioneConservazioneProtocolloPage_CheckedRowCount") = value
+        End Set
+    End Property
+
+
+    Public Property ProtocolliConservazione() As List(Of ProtocolloConservazione)
+        Get
+            Return CType(Session("GestioneConservazioneProtocolloPage_ProtocolliConservazione"), List(Of ProtocolloConservazione))
+        End Get
+        Set(ByVal value As List(Of ProtocolloConservazione))
+            Session("GestioneConservazioneProtocolloPage_ProtocolliConservazione") = value
+        End Set
+    End Property
+
+#End Region
+
+#Region "EVENTI PAGINA"
+
+    Protected Sub Page_Init(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Init
+        Me.MainPage = CType(Me.Master, MainPage)
+        Me.MainPage.NomeModulo = "Protocollo"
+        Me.MainPage.DescrizioneProcedura = "> Conservazione Protocolli"
+
+        Dim css As HtmlGenericControl
+        css = New HtmlGenericControl
+        css.TagName = "style"
+        css.Attributes.Add("type", "text/css")
+        css.InnerHtml = "div.RadUploadProgressArea_Office2007 .ruProgress { background-image: none;}" & vbCrLf
+        css.InnerHtml += ".RadUploadProgressArea { width: 320px !important;}" & vbCrLf
+        css.InnerHtml += "div.RadUploadProgressArea li.ruProgressHeader{ margin: 10px 18px 0px; }" & vbCrLf
+        css.InnerHtml += "table.CkeckListCss tr td label {margin-right:10px;padding-right:10px;}" & vbCrLf
+        Me.Page.Header.Controls.Add(css)
+
+        If Not Me.Page.IsPostBack Then
+            Me.ProtocolliConservazione = Nothing
+
+            Me.CheckedRowCount = 0
+            Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+
+            Me.ResettaFiltro()
+
+            'Imposto l'ordinamento predefinito.
+            Dim sortExpr As New Telerik.Web.UI.GridSortExpression()
+            sortExpr.FieldName = "DataImmissione"
+            sortExpr.SortOrder = Telerik.Web.UI.GridSortOrder.Descending
+            Me.ProtocolliGridView.MasterTableView.SortExpressions.AddSortExpression(sortExpr)
+
+            Dim clienteRepository As New ParsecAdmin.ClientRepository
+            Dim cliente = clienteRepository.GetAll().FirstOrDefault
+            ''''Me.Cliente = cliente
+            clienteRepository.Dispose()
+
+            Me.chkDaInviare.Checked = True
+            Me.chkInviate.Checked = False
+            Me.chkArchiviate.Checked = False
+
+            Dim limitePagine = GetlimiteNumeroPagineRicerca()
+            If (limitePagine = -1) Then
+                Me.NoPaging.Visible = False
+            End If
+
+            Me.cmbConservabilita.Items.Insert(0, New Telerik.Web.UI.RadComboBoxItem("NO", "0"))
+            Me.cmbConservabilita.Items.Insert(1, New Telerik.Web.UI.RadComboBoxItem("SI", "1"))
+            Me.cmbConservabilita.SelectedValue = 0
+
+            Dim funzioneAbilitata = utenteCollegato.Funzioni.Where(Function(c) c.Codice = CInt(ParsecAtt.TipologiaFunzione.AbilitaRipristinoMailConservazione)).FirstOrDefault
+            If (Not utenteCollegato.SuperUser And funzioneAbilitata Is Nothing) Then
+                Me.cmbConservabilita.Enabled = False
+                Me.cmbConservabilita.SelectedValue = 0
+                Me.cmbConservabilita.Visible = False
+                'Me.chkNonConservabili.Checked = False
+            Else
+                'Me.chkNonConservabili.Enabled = True
+                'Me.cmbConservabilita.SelectedValue = 0
+            End If
+            'If (Not utenteCollegato.SuperUser And funzioneAbilitata Is Nothing) Then
+            '    Me.chkNonConservabili.Enabled = False
+            '    Me.chkNonConservabili.Checked = False
+            'Else
+            '    Me.chkNonConservabili.Enabled = True
+            'End If
+
+        End If
+
+        Me.ProtocolliGridView.GroupingSettings.CaseSensitive = False
+
+    End Sub
+
+    Protected Sub Page_LoadComplete(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.LoadComplete
+        'Me.TitoloElencoLabel.Text = "Elenco Registrazioni di Protocollo " & If(Me.ProtocolliConservazione.Count > 0, "( " & Me.ProtocolliConservazione.Count.ToString & " )", "")
+        Me.ConservaProtocolliImageButton.Enabled = Me.ProtocolliGridView.SelectedItems.Count > 0
+    End Sub
+
+#End Region
+
+#Region "EVENTI GRIGLIA"
+
+    Protected Sub ProtocolliGridView_NeedDataSource(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridNeedDataSourceEventArgs) Handles ProtocolliGridView.NeedDataSource
+
+        If Me.ProtocolliConservazione Is Nothing Then
+            Dim filtro = Me.GetFiltro
+            'If Not filtro.Inviati AndAlso Not filtro.DaInviare AndAlso Not filtro.Archiviati Then
+            '    Me.ProtocolliConservazione = New List(Of ProtocolloConservazione)
+            'Else
+            '    Me.ProtocolliConservazione = Me.GetDocumentiDaConservare(Me.GetFiltro)
+            'End If
+            Me.ProtocolliConservazione = Me.GetDocumentiDaConservare(Me.GetFiltro)
+        End If
+        Me.ProtocolliGridView.DataSource = Me.ProtocolliConservazione
+
+    End Sub
+
+
+    Private Function GetProtocolliSenzaIterDaConservare(ByVal filtro As FiltroProtocolloConservazione) As List(Of ProtocolloConservazione)
+        Dim registrazioni As New ParsecPro.RegistrazioniRepository
+        Dim istanze As New ParsecCommon.RepositoryBase(Of ParsecPro.IstanzaWKF)(registrazioni.Context)
+        Dim documentiConservati As New ParsecPro.DocumentoConservazioneRepository(registrazioni.Context)
+
+        Dim view = (From registrazione In registrazioni.GetQuery.Where(Function(w) w.TipologiaAllegatoPrimario = 0 And w.InviatoDaFascicolo = False)
+                 Group Join documentoConservato In documentiConservati.GetQuery
+                 On documentoConservato.Id Equals registrazione.IdDocumentoWS
+                 Into elencoDocumentiConservati = Group
+                 From documentoConservato In elencoDocumentiConservati.DefaultIfEmpty
+                 Group Join istanza In istanze.GetQuery
+                 On registrazione.Id Equals istanza.IdDocumento
+                 Into elencoIstanze = Group
+                 From istanza In elencoIstanze.DefaultIfEmpty()
+                 Where registrazione.Annullato = False And registrazione.Modificato = False And istanza Is Nothing
+                 Let IdPacchettoVersamento = documentoConservato.IdPacchettoVersamento
+                 Select registrazione, IdPacchettoVersamento).Distinct
+
+        Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+        Dim funzioneAbilitata = utenteCollegato.Funzioni.Where(Function(c) c.Codice = CInt(ParsecAtt.TipologiaFunzione.AbilitaRipristinoMailConservazione)).FirstOrDefault
+
+        If filtro.NonConservabili = "1" Then
+            If (Not utenteCollegato.SuperUser And funzioneAbilitata Is Nothing) Then
+                view = view.Where(Function(c) c.registrazione.Conservabile = True)
+            Else
+                view = view.Where(Function(c) c.registrazione.Conservabile = False)
+            End If
+        Else
+            view = view.Where(Function(c) c.registrazione.Conservabile = True)
+        End If
+
+        'SOLO INVIATI
+        If filtro.Inviati AndAlso Not filtro.DaInviare And Not filtro.Archiviati Then
+            view = view.Where(Function(c) c.registrazione.IdDocumentoWS.HasValue And Not c.IdPacchettoVersamento.HasValue)
+
+            'SOLO DA INVIARE
+        ElseIf Not filtro.Inviati AndAlso filtro.DaInviare And Not filtro.Archiviati Then
+            view = view.Where(Function(c) Not c.registrazione.IdDocumentoWS.HasValue)
+
+            'INVIATI + DA INVIARE
+        ElseIf filtro.Inviati AndAlso filtro.DaInviare And Not filtro.Archiviati Then
+            view = view.Where(Function(c) Not c.registrazione.IdDocumentoWS.HasValue Or c.registrazione.IdDocumentoWS.HasValue And Not c.IdPacchettoVersamento.HasValue)
+
+            'SOLO ARCHIVIARE
+        ElseIf filtro.Archiviati AndAlso Not filtro.Inviati AndAlso Not filtro.DaInviare Then
+            view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue)
+
+            'INVIATI + ARCHIVIARE
+        ElseIf filtro.Archiviati AndAlso filtro.Inviati AndAlso Not filtro.DaInviare Then
+            view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue Or c.registrazione.IdDocumentoWS.HasValue)
+
+            'DA INVIARE + ARCHIVIARE
+        ElseIf filtro.Archiviati AndAlso Not filtro.Inviati AndAlso filtro.DaInviare Then
+            view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue Or Not c.registrazione.IdDocumentoWS.HasValue)
+
+            'TUTTI
+        ElseIf filtro.Inviati AndAlso filtro.DaInviare AndAlso filtro.Archiviati Then
+            view = view.Where(Function(c) Not c.registrazione.IdDocumentoWS.HasValue Or c.registrazione.IdDocumentoWS.HasValue Or c.IdPacchettoVersamento.HasValue)
+        End If
+
+        If filtro.DataInizio.HasValue Then
+            Dim d As Date = filtro.DataInizio.Value
+            Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 0, 0, 0)
+            view = view.Where(Function(c) c.registrazione.DataImmissione >= newDate)
+        End If
+
+        If filtro.DataFine.HasValue Then
+            Dim d As Date = filtro.DataFine.Value
+            Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 23, 59, 59)
+            view = view.Where(Function(c) c.registrazione.DataImmissione <= newDate)
+        End If
+
+        'Dim oqt As ObjectQuery = TryCast(view, ObjectQuery)
+        'Dim sttt = oqt.ToTraceString
+
+        Dim res = From c In view.AsEnumerable.Select(Function(c) New ProtocolloConservazione With {
+                                                        .Id = c.registrazione.Id,
+                                                        .AnnoProtocollo = c.registrazione.DataImmissione.Value.Year,
+                                                        .IdDocumentoWS = c.registrazione.IdDocumentoWS,
+                                                        .IdPacchettoVersamento = c.IdPacchettoVersamento,
+                                                        .NumeroProtocollo = c.registrazione.NumeroProtocollo,
+                                                        .DescrizioneTipologiaRegistristrazione = If(c.registrazione.TipoRegistrazione = 0, "ARRIVO", If(c.registrazione.TipoRegistrazione = 1, "PARTENZA", "INTERNO")),
+                                                        .DataImmissione = c.registrazione.DataImmissione,
+                                                        .Oggetto = c.registrazione.Oggetto,
+                                                        .ElencoReferentiEsterni = c.registrazione.ElencoReferentiEsterni,
+                                                        .ElencoReferentiInterni = c.registrazione.ElencoReferentiInterni,
+                                                        .InviatoDaFascicolo = c.registrazione.InviatoDaFascicolo,
+                                                        .Conservabile = c.registrazione.Conservabile
+                                                   })
+
+        Return res.ToList
+    End Function
+
+
+
+    Private Function GetProtocolliConIterDaConservare(ByVal filtro As FiltroProtocolloConservazione) As List(Of ProtocolloConservazione)
+        Dim registrazioni As New ParsecPro.RegistrazioniRepository
+        Dim documentiConservati As New ParsecPro.DocumentoConservazioneRepository(registrazioni.Context)
+
+
+        Dim view = From registrazione In registrazioni.GetQuery.Where(Function(w) w.TipologiaAllegatoPrimario = 0 And w.InviatoDaFascicolo = False)
+                  Group Join documentoConservato In documentiConservati.GetQuery
+                 On documentoConservato.Id Equals registrazione.IdDocumentoWS
+                 Into elencoDocumentiConservati = Group
+                 From documentoConservato In elencoDocumentiConservati.DefaultIfEmpty
+                 Where registrazione.Annullato = False And registrazione.Modificato = False
+                Let IdPacchettoVersamento = documentoConservato.IdPacchettoVersamento
+               Select registrazione, IdPacchettoVersamento
+
+
+        Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+        Dim funzioneAbilitata = utenteCollegato.Funzioni.Where(Function(c) c.Codice = CInt(ParsecAtt.TipologiaFunzione.AbilitaRipristinoMailConservazione)).FirstOrDefault
+
+        If filtro.NonConservabili = "1" Then
+            If (Not utenteCollegato.SuperUser And funzioneAbilitata Is Nothing) Then
+                view = view.Where(Function(c) c.registrazione.Conservabile = True)
+            Else
+                view = view.Where(Function(c) c.registrazione.Conservabile = False)
+            End If
+        Else
+            view = view.Where(Function(c) c.registrazione.Conservabile = True)
+        End If
+
+        'SOLO INVIATI
+        If filtro.Inviati AndAlso Not filtro.DaInviare And Not filtro.Archiviati Then
+            view = view.Where(Function(c) c.registrazione.IdDocumentoWS.HasValue And Not c.IdPacchettoVersamento.HasValue)
+
+            'SOLO DA INVIARE
+        ElseIf Not filtro.Inviati AndAlso filtro.DaInviare And Not filtro.Archiviati Then
+            view = view.Where(Function(c) Not c.registrazione.IdDocumentoWS.HasValue)
+
+            'INVIATI + DA INVIARE
+        ElseIf filtro.Inviati AndAlso filtro.DaInviare And Not filtro.Archiviati Then
+            view = view.Where(Function(c) Not c.registrazione.IdDocumentoWS.HasValue Or c.registrazione.IdDocumentoWS.HasValue And Not c.IdPacchettoVersamento.HasValue)
+
+            'SOLO ARCHIVIARE
+        ElseIf filtro.Archiviati AndAlso Not filtro.Inviati AndAlso Not filtro.DaInviare Then
+            view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue)
+
+            'INVIATI + ARCHIVIARE
+        ElseIf filtro.Archiviati AndAlso filtro.Inviati AndAlso Not filtro.DaInviare Then
+            view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue Or c.registrazione.IdDocumentoWS.HasValue)
+
+            'DA INVIARE + ARCHIVIARE
+        ElseIf filtro.Archiviati AndAlso Not filtro.Inviati AndAlso filtro.DaInviare Then
+            view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue Or Not c.registrazione.IdDocumentoWS.HasValue)
+
+            'TUTTI
+        ElseIf filtro.Inviati AndAlso filtro.DaInviare AndAlso filtro.Archiviati Then
+            view = view.Where(Function(c) Not c.registrazione.IdDocumentoWS.HasValue Or c.registrazione.IdDocumentoWS.HasValue Or c.IdPacchettoVersamento.HasValue)
+        End If
+
+        If filtro.DataInizio.HasValue Then
+            Dim d As Date = filtro.DataInizio.Value
+            Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 0, 0, 0)
+            view = view.Where(Function(c) c.registrazione.DataImmissione >= newDate)
+        End If
+
+        If filtro.DataFine.HasValue Then
+            Dim d As Date = filtro.DataFine.Value
+            Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 23, 59, 59)
+            view = view.Where(Function(c) c.registrazione.DataImmissione <= newDate)
+        End If
+
+        Dim res = From c In view.AsEnumerable.Select(Function(c) New ProtocolloConservazione With {
+                                                        .Id = c.registrazione.Id,
+                                                        .AnnoProtocollo = c.registrazione.DataImmissione.Value.Year,
+                                                        .IdDocumentoWS = c.registrazione.IdDocumentoWS,
+                                                        .IdPacchettoVersamento = c.IdPacchettoVersamento,
+                                                        .NumeroProtocollo = c.registrazione.NumeroProtocollo,
+                                                        .DescrizioneTipologiaRegistristrazione = If(c.registrazione.TipoRegistrazione = 0, "ARRIVO", If(c.registrazione.TipoRegistrazione = 1, "PARTENZA", "INTERNO")),
+                                                        .DataImmissione = c.registrazione.DataImmissione,
+                                                        .Oggetto = c.registrazione.Oggetto,
+                                                        .ElencoReferentiEsterni = c.registrazione.ElencoReferentiEsterni,
+                                                        .ElencoReferentiInterni = c.registrazione.ElencoReferentiInterni,
+                                                        .InviatoDaFascicolo = c.registrazione.InviatoDaFascicolo,
+                                                        .Conservabile = c.registrazione.Conservabile
+                                                   })
+
+
+        Dim istanze As New ParsecCommon.RepositoryBase(Of ParsecPro.IstanzaWKF)(registrazioni.Context)
+        Dim istanzeDistinte = istanze.Where(Function(c) c.IdModulo = ParsecAdmin.TipoModulo.PRO).Select(Function(s) New With {s.IdDocumento, s.IdStato}).Distinct.ToList
+
+        Dim istanzeRaggruppate = istanzeDistinte.GroupBy(Function(v) New With {Key .IdDocumento = v.IdDocumento}).Where(Function(c) c.Count = 1).ToList
+
+        Dim ret = From ris In res.ToList
+                  Join istanza In istanzeRaggruppate
+                  On ris.Id Equals istanza.FirstOrDefault.IdDocumento
+                  Where istanza.FirstOrDefault.IdStato = 3
+                  Select ris
+
+
+        Return ret.ToList
+    End Function
+
+
+    Private Function GetDocumentiDaConservare(ByVal filtro As FiltroProtocolloConservazione) As List(Of ProtocolloConservazione)
+        Dim noIter = Me.GetProtocolliSenzaIterDaConservare(filtro)
+        Dim iter = Me.GetProtocolliConIterDaConservare(filtro)
+        Dim res = noIter.Union(iter).OrderBy(Function(c) c.NumeroProtocollo).ThenByDescending(Function(c) c.DataImmissione).ToList
+        Return res
+    End Function
+
+
+
+    'Private Function GetDocumentiDaConservare2(ByVal filtro As FiltroProtocolloConservazione) As List(Of ProtocolloConservazione)
+
+    '    'Dim mailPartenza As New ParsecPro.EmailRepository
+    '    Dim registrazioni As New ParsecPro.RegistrazioniRepository()
+    '    Dim allegati As New ParsecPro.AllegatiRepository(registrazioni.Context)
+    '    Dim documentiConservati As New ParsecPro.DocumentoConservazioneRepository(registrazioni.Context)
+
+    '    Dim istanzeRep As New ParsecCommon.RepositoryBase(Of ParsecPro.IstanzaWKF)(registrazioni.Context)
+
+    '    'becco le fatture
+
+
+    '    ''Dim view = From documento In documenti.GetQuery.Where(Function(w) w.TipologiaAllegatoPrimario = 0 And w.InviatoDaFascicolo = False)
+    '    ''           Join allegato In allegati.GetQuery On allegato.IdRegistrazione Equals documento.Id
+    '    ''            Group Join documentoConservato In documentiConservati.GetQuery
+    '    ''            On documentoConservato.Id Equals documento.IdDocumentoWS
+    '    ''            Into elencoDocumentiConservati = Group
+    '    ''            From documentoConservato In elencoDocumentiConservati.DefaultIfEmpty
+    '    ''            Group Join istanza In istanze.GetQuery.Where(Function(c) c.IdModulo = ParsecAdmin.TipoModulo.PRO)
+    '    ''            On documento.Id Equals istanza.IdDocumento
+    '    ''            Into elencoIstanze = Group
+    '    ''            From istanza In elencoIstanze.DefaultIfEmpty()
+    '    ''            Where documento.Annullato = False And documento.Modificato = False And ((Not istanza Is Nothing And istanza.IdStato = 3) Or (istanza Is Nothing)) _
+    '    ''            Let IdPacchettoVersamento = If(documentoConservato Is Nothing, Nothing, documentoConservato.IdPacchettoVersamento)
+    '    ''            Order By documento.NumeroProtocollo, documento.DataImmissione Descending
+    '    ''            Select documento, IdPacchettoVersamento
+
+    '    'Dim view = From registrazione In registrazioni.GetQuery.Where(Function(w) w.TipologiaAllegatoPrimario = 0 And w.InviatoDaFascicolo = False And w.NumeroProtocollo = 12218 And w.DataImmissione.Value.Year = 2017)
+    '    '           Group Join documentoConservato In documentiConservati.GetQuery
+    '    '           On documentoConservato.Id Equals registrazione.IdDocumentoWS
+    '    '           Into elencoDocumentiConservati = Group
+    '    '           From documentoConservato In elencoDocumentiConservati.DefaultIfEmpty
+    '    '           Group Join istanza In istanze
+    '    '           On registrazione.Id Equals istanza.IdDocumento
+    '    '           Into elencoIstanze = Group
+    '    '           From istanza In elencoIstanze.DefaultIfEmpty()
+    '    '           Where registrazione.Annullato = False And registrazione.Modificato = False And ((Not istanza Is Nothing And istanza.IdStato = 3) Or (istanza Is Nothing)) _
+    '    '           Let IdPacchettoVersamento = If(documentoConservato Is Nothing, Nothing, documentoConservato.IdPacchettoVersamento)
+    '    '           Order By registrazione.NumeroProtocollo, registrazione.DataImmissione Descending
+    '    '           Select registrazione, IdPacchettoVersamento
+
+
+    '    Dim view = From registrazione In registrazioni.GetQuery.Where(Function(w) w.TipologiaAllegatoPrimario = 0 And w.InviatoDaFascicolo = False And w.NumeroProtocollo = 12218 And w.DataImmissione.Value.Year = 2017)
+    '              Group Join documentoConservato In documentiConservati.GetQuery
+    '              On documentoConservato.Id Equals registrazione.IdDocumentoWS
+    '              Into elencoDocumentiConservati = Group
+    '              From documentoConservato In elencoDocumentiConservati.DefaultIfEmpty
+    '              Where registrazione.Annullato = False And registrazione.Modificato = False _
+    '              Let IdPacchettoVersamento = If(documentoConservato Is Nothing, Nothing, documentoConservato.IdPacchettoVersamento)
+    '              Order By registrazione.NumeroProtocollo, registrazione.DataImmissione Descending
+    '              Select registrazione, IdPacchettoVersamento
+
+
+    '    Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+    '    Dim funzioneAbilitata = utenteCollegato.Funzioni.Where(Function(c) c.Codice = CInt(ParsecAtt.TipologiaFunzione.AbilitaRipristinoMailConservazione)).FirstOrDefault
+
+    '    If filtro.NonConservabili = "1" Then
+    '        If (Not utenteCollegato.SuperUser And funzioneAbilitata Is Nothing) Then
+    '            view = view.Where(Function(c) c.registrazione.Conservabile = True)
+    '        Else
+    '            view = view.Where(Function(c) c.registrazione.Conservabile = False)
+    '        End If
+    '    Else
+    '        view = view.Where(Function(c) c.registrazione.Conservabile = True)
+    '    End If
+
+    '    'If filtro.NonConservabili Then
+    '    '    If (Not utenteCollegato.SuperUser And funzioneAbilitata Is Nothing) Then
+    '    '        view = view.Where(Function(c) c.documento.Conservabile = True)
+    '    '    Else
+    '    '        view = view.Where(Function(c) c.documento.Conservabile = False)
+    '    '    End If
+    '    'Else
+    '    '    view = view.Where(Function(c) c.documento.Conservabile = True)
+    '    'End If
+
+    '    'SOLO INVIATI
+    '    If filtro.Inviati AndAlso Not filtro.DaInviare And Not filtro.Archiviati Then
+    '        view = view.Where(Function(c) c.registrazione.IdDocumentoWS.HasValue And Not c.IdPacchettoVersamento.HasValue)
+
+    '        'SOLO DA INVIARE
+    '    ElseIf Not filtro.Inviati AndAlso filtro.DaInviare And Not filtro.Archiviati Then
+    '        view = view.Where(Function(c) Not c.registrazione.IdDocumentoWS.HasValue)
+
+    '        'INVIATI + DA INVIARE
+    '    ElseIf filtro.Inviati AndAlso filtro.DaInviare And Not filtro.Archiviati Then
+    '        view = view.Where(Function(c) Not c.registrazione.IdDocumentoWS.HasValue Or c.registrazione.IdDocumentoWS.HasValue And Not c.IdPacchettoVersamento.HasValue)
+
+    '        'SOLO ARCHIVIARE
+    '    ElseIf filtro.Archiviati AndAlso Not filtro.Inviati AndAlso Not filtro.DaInviare Then
+    '        view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue)
+
+    '        'INVIATI + ARCHIVIARE
+    '    ElseIf filtro.Archiviati AndAlso filtro.Inviati AndAlso Not filtro.DaInviare Then
+    '        view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue Or c.registrazione.IdDocumentoWS.HasValue)
+
+    '        'DA INVIARE + ARCHIVIARE
+    '    ElseIf filtro.Archiviati AndAlso Not filtro.Inviati AndAlso filtro.DaInviare Then
+    '        view = view.Where(Function(c) c.IdPacchettoVersamento.HasValue Or Not c.registrazione.IdDocumentoWS.HasValue)
+
+    '        'TUTTI
+    '    ElseIf filtro.Inviati AndAlso filtro.DaInviare AndAlso filtro.Archiviati Then
+    '        view = view.Where(Function(c) Not c.registrazione.IdDocumentoWS.HasValue Or c.registrazione.IdDocumentoWS.HasValue Or c.IdPacchettoVersamento.HasValue)
+    '    End If
+
+    '    If filtro.DataInizio.HasValue Then
+    '        Dim d As Date = filtro.DataInizio.Value
+    '        Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 0, 0, 0)
+    '        view = view.Where(Function(c) c.registrazione.DataImmissione >= newDate)
+    '    End If
+
+    '    If filtro.DataFine.HasValue Then
+    '        Dim d As Date = filtro.DataFine.Value
+    '        Dim newDate As Date = New Date(d.Year, d.Month, d.Day, 23, 59, 59)
+    '        view = view.Where(Function(c) c.registrazione.DataImmissione <= newDate)
+    '    End If
+
+
+
+
+    '    Dim viewConIstanzaIstanza = From reg In view
+    '                           Join istanza In istanzeRep.GetQuery On istanza.IdDocumento Equals reg.registrazione.Id
+    '                           Select reg
+
+    '    Dim viewConIstanza = From reg In view
+    '                           Group Join istanza In istanzeRep.GetQuery
+    '                           On reg.registrazione.Id Equals istanza.IdDocumento
+    '                           Into elencoIstanze = Group
+    '                           From istanza In elencoIstanze.DefaultIfEmpty()
+    '                           Select reg
+
+
+    '    Dim res = From c In view.AsEnumerable.Select(Function(c) New ProtocolloConservazione With {
+    '                                                     .Id = c.registrazione.Id,
+    '                                                     .AnnoProtocollo = c.registrazione.DataImmissione.Value.Year,
+    '                                                     .IdDocumentoWS = c.registrazione.IdDocumentoWS,
+    '                                                     .IdPacchettoVersamento = c.IdPacchettoVersamento,
+    '                                                     .NumeroProtocollo = c.registrazione.NumeroProtocollo.ToString.PadLeft(7, "0"),
+    '                                                     .DescrizioneTipologiaRegistristrazione = If(c.registrazione.TipoRegistrazione = 0, "ARRIVO", If(c.registrazione.TipoRegistrazione = 1, "PARTENZA", "INTERNO")),
+    '                                                     .DataImmissione = c.registrazione.DataImmissione,
+    '                                                     .Oggetto = c.registrazione.Oggetto,
+    '                                                     .ElencoReferentiEsterni = c.registrazione.ElencoReferentiEsterni,
+    '                                                     .ElencoReferentiInterni = c.registrazione.ElencoReferentiInterni,
+    '                                                     .InviatoDaFascicolo = c.registrazione.InviatoDaFascicolo,
+    '                                                     .Conservabile = c.registrazione.Conservabile
+    '                                                })
+
+
+    '    Dim istanzeDistinte = istanzeRep.Where(Function(c) c.IdModulo = ParsecAdmin.TipoModulo.PRO).Select(Function(s) New With {s.IdDocumento, s.IdStato}).Distinct.ToList
+
+
+
+    '    Dim oResult2 = istanzeDistinte _
+    '            .GroupBy(Function(v) New With {Key .IdDocumento = v.IdDocumento}) _
+    '            .Where(Function(grp) grp.Count = 1).Select(Function(s) New With {.IdDocumento = s.FirstOrDefault.IdDocumento, .IdStato = s.FirstOrDefault.IdStato}).ToList
+
+    '    Dim res2 = From ris In res.ToList
+    '               Group Join istanza In oResult2 On ris.Id Equals istanza.IdDocumento
+    '               Into elencoIstanze = Group
+    '               From istanza In elencoIstanze.DefaultIfEmpty()
+    '               Where ((Not istanza Is Nothing AndAlso istanza.IdStato = 3) Or (istanza Is Nothing))
+    '               Select ris
+
+    '    '
+
+    '    Return res2.ToList
+
+    'End Function
+
+    Protected Sub chkDaInviare_CheckedChanged(sender As Object, e As System.EventArgs) Handles chkDaInviare.CheckedChanged
+        If (Me.chkDaInviare.Checked) Then
+            Me.cmbConservabilita.Enabled = True
+        Else
+            Me.cmbConservabilita.Enabled = False
+        End If
+        Me.cmbConservabilita.SelectedValue = 0
+    End Sub
+
+    Protected Sub EsportaInExcelImageButton_Click(sender As Object, e As System.Web.UI.ImageClickEventArgs) Handles EsportaInExcelImageButton.Click
+
+        Me.ProtocolliGridView.AllowPaging = False
+        Me.ProtocolliGridView.Rebind()
+
+        If Me.ProtocolliGridView.MasterTableView.Items.Count = 0 Then
+            ParsecUtility.Utility.MessageBox("Non ci sono registrazioni di Protocollo." & vbCrLf & "Impossibile eseguire l'esportazione!", False)
+            Exit Sub
+        End If
+
+        Dim utente As ParsecAdmin.Utente = ParsecUtility.Applicazione.UtenteCorrente
+        Dim exportFilename As String = String.Format("Protocolli_UT{0}_AL_{1}.xls", utente.Id, Now.ToString("ddMM_yyyy_hhmmss"))
+
+        Dim pathExport As String = System.Configuration.ConfigurationManager.AppSettings("PathDocumentiTemp")
+        Dim fullPathExport As String = pathExport & exportFilename
+
+        Dim swExport As New IO.StreamWriter(fullPathExport, False, System.Text.Encoding.Default)
+        Dim line As New StringBuilder
+
+        line.Append("N. PROT." & vbTab)
+        line.Append("TIPOLOGIA" & vbTab)
+        line.Append("DATA" & vbTab)
+        line.Append("OGGETTO" & vbTab)
+        line.Append("MITTENTE/DESTINATARIO" & vbTab)
+        line.Append("UFFICIO" & vbTab)
+
+        swExport.WriteLine(line.ToString)
+        line.Clear()
+
+        Dim p As ProtocolloConservazione = Nothing
+        For Each item As GridDataItem In Me.ProtocolliGridView.MasterTableView.Items
+            Dim idSelezionato As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+
+            p = Me.ProtocolliConservazione.Where(Function(c) c.Id = idSelezionato).FirstOrDefault
+
+            line.Append(If(Not p.NumeroProtocollo Is Nothing, p.NumeroProtocollo.ToString, "") & vbTab)
+            line.Append(If(p.DescrizioneTipologiaRegistristrazione <> "", p.DescrizioneTipologiaRegistristrazione.ToString, "") & vbTab)
+            line.Append(If(IsDate(p.DataImmissione), p.DataImmissione.ToShortDateString, "") & vbTab)
+            line.Append(If(Not p.Oggetto Is Nothing, p.Oggetto.ToString, "") & vbTab)
+            line.Append(If(Not p.ElencoReferentiEsterni Is Nothing, p.ElencoReferentiEsterni.ToString, "") & vbTab)
+            line.Append(If(Not p.ElencoReferentiInterni Is Nothing, p.ElencoReferentiInterni.ToString, "") & vbTab)
+
+            swExport.WriteLine(line.ToString)
+            line.Clear()
+
+        Next
+
+        swExport.Close()
+
+        Session("AttachmentFullName") = fullPathExport
+
+        Dim pageUrl As String = "~/UI/Amministrazione/pages/user/ExportExcelPage.aspx"
+        ParsecUtility.Utility.PageReload(pageUrl, False)
+
+        ProtocolliGridView.AllowPaging = True
+        ProtocolliGridView.Rebind()
+
+    End Sub
+
+    Protected Sub ProtocolliGridView_ItemCommand(sender As Object, e As Telerik.Web.UI.GridCommandEventArgs) Handles ProtocolliGridView.ItemCommand
+        If e.CommandName = Telerik.Web.UI.RadGrid.ExpandCollapseCommandName AndAlso Not e.Item.Expanded Then
+            Dim parentItem As Telerik.Web.UI.GridDataItem = CType(e.Item, Telerik.Web.UI.GridDataItem)
+            Dim innerGrid As Telerik.Web.UI.RadGrid = CType(parentItem.ChildItem.FindControl("NotificheGridView"), Telerik.Web.UI.RadGrid)
+            innerGrid.Rebind()
+        ElseIf e.CommandName = "Preview" Then
+            Me.VisualizzaDocumento(e.Item)
+        ElseIf e.CommandName = "SbloccoProtocollo" Then
+            Me.SbloccaProtocollo(e.Item)
+        ElseIf e.CommandName = "RipristinaProtocollo" Then
+            Me.RipristinaBloccaProtocollo(e.Item)
+        End If
+    End Sub
+
+    Protected Sub ProtocolliGridView_ItemCreated(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridItemEventArgs) Handles ProtocolliGridView.ItemCreated
+
+        If TypeOf e.Item Is GridDataItem Then
+            AddHandler e.Item.PreRender, AddressOf ProtocolliGridView_ItemPreRender
+        End If
+
+        If TypeOf e.Item Is Telerik.Web.UI.GridPagerItem Then
+            Dim pageSizeComboBox As RadComboBox = CType(e.Item.FindControl("PageSizeComboBox"), RadComboBox)
+            pageSizeComboBox.Visible = False
+            Dim changePageSizelbl As Label = CType(e.Item.FindControl("ChangePageSizeLabel"), Label)
+            changePageSizelbl.Visible = False
+
+        End If
+
+    End Sub
+
+    Protected Sub ProtocolliGridView_PreRender(ByVal sender As Object, ByVal e As EventArgs) Handles ProtocolliGridView.PreRender
+        Dim headerItem As GridHeaderItem = CType(Me.ProtocolliGridView.MasterTableView.GetItems(GridItemType.Header)(0), GridHeaderItem)
+        Dim count = Me.CheckedRowCount
+        If count > 0 Then
+            CType(headerItem.FindControl("SelectAllCheckBox"), CheckBox).Checked = (Me.ProtocolliGridView.SelectedItems.Count = count)
+        End If
+        CType(headerItem.FindControl("SelectAllCheckBox"), CheckBox).Enabled = Me.ProtocolliGridView.Items.Count > 0
+        Me.CheckedRowCount = 0
+    End Sub
+
+    Protected Sub ProtocolliGridView_ItemPreRender(ByVal sender As Object, ByVal e As EventArgs)
+        CType(CType(sender, GridDataItem)("CheckBoxTemplateColumn").FindControl("SelectCheckBox"), CheckBox).Checked = CType(sender, GridDataItem).Selected
+    End Sub
+
+    Protected Sub ProtocolliGridView_ItemDataBound(sender As Object, e As Telerik.Web.UI.GridItemEventArgs) Handles ProtocolliGridView.ItemDataBound
+
+        Dim sbloccoButton As ImageButton = Nothing
+        Dim statoButton As ImageButton = Nothing
+
+        If TypeOf e.Item Is Telerik.Web.UI.GridPagerItem Then
+            Dim pagerItem = CType(e.Item, GridPagerItem)
+            Dim itemsCount = pagerItem.Paging.DataSourceCount
+            Me.TitoloElencoLabel.Text = "Elenco Registrazioni di Protocollo " & If(itemsCount > 0, "( " & itemsCount.ToString & " )", "")
+        End If
+
+        If TypeOf e.Item Is Telerik.Web.UI.GridDataItem Then
+            Dim dataItem As Telerik.Web.UI.GridDataItem = e.Item
+
+            Dim documento As ProtocolloConservazione = CType(e.Item.DataItem, ProtocolloConservazione)
+
+            If TypeOf dataItem("SbloccoProtocollo").Controls(0) Is ImageButton Then
+                statoButton = CType(dataItem("StatoProtocollo").Controls(0), ImageButton)
+                sbloccoButton = CType(dataItem("SbloccoProtocollo").Controls(0), ImageButton)
+
+                statoButton.Enabled = False
+
+
+                If Not documento.IdDocumentoWS.HasValue Then
+
+                    sbloccoButton.ImageUrl = "~\images\vuoto.png"
+                    sbloccoButton.Attributes.Add("onclick", "return false;")
+                    sbloccoButton.ToolTip = "Registrazione Protocollo da inviare al Modulo Archivio."
+
+                    statoButton.ImageUrl = "~\images\pBlue16.png"
+                    statoButton.ToolTip = "Registrazione Protocollo da inviare al Modulo Archivio."
+
+                    Me.CheckedRowCount += 1
+                Else
+
+                    Dim chk As CheckBox = CType(dataItem("CheckBoxTemplateColumn").FindControl("SelectCheckBox"), CheckBox)
+                    chk.Enabled = False
+
+                    If documento.IdPacchettoVersamento.HasValue Then
+                        sbloccoButton.ImageUrl = "~\images\Lock_16.png"
+                        sbloccoButton.Attributes.Add("onclick", "return false;")
+                        sbloccoButton.ToolTip = "Registrazione Protocollo già impacchettata: impossibile sbloccarlo."
+
+                        statoButton.ImageUrl = "~\images\pRosso16.png"
+                        statoButton.ToolTip = "Registrazione Protocollo già inviata al Modulo Archivio ed Impacchettata."
+                    ElseIf (documento.InviatoDaFascicolo = False) Then
+                        sbloccoButton.ImageUrl = "~\images\unLock_16.png"
+                        sbloccoButton.ToolTip = "Sblocca Protocollo."
+
+                        statoButton.ImageUrl = "~\images\pVerde16.png"
+                        statoButton.ToolTip = "Registrazione Protocollo già inviato al Modulo Archivio e non Impacchettata."
+                    Else
+                        sbloccoButton.ImageUrl = "~\images\Lock_16.png"
+                        sbloccoButton.Attributes.Add("onclick", "return false;")
+                        sbloccoButton.ToolTip = "Registrazione Protocollo inviata dai Fascicoli: impossibile sbloccarla."
+
+                        statoButton.ImageUrl = "~\images\pVerde16.png"
+                        statoButton.ToolTip = "Registrazione Protocollo inviata dai Fascicoli: impossibile sbloccarla."
+                    End If
+
+                End If
+
+            End If
+
+            If TypeOf dataItem("RipristinaProtocollo").Controls(0) Is ImageButton Then
+
+                Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+                Dim funzioneAbilitata = utenteCollegato.Funzioni.Where(Function(c) c.Codice = CInt(ParsecAtt.TipologiaFunzione.AbilitaRipristinoMailConservazione)).FirstOrDefault
+
+                Dim ripristinaMailButton As ImageButton = Nothing
+                ripristinaMailButton = CType(dataItem("RipristinaProtocollo").Controls(0), ImageButton)
+
+                Dim mailPartenzaRepository As New ParsecPro.EmailRepository
+                Dim mailPartenza = mailPartenzaRepository.GetQuery.Where(Function(w) w.AnnoProtocollo = documento.AnnoProtocollo And w.NumeroProtocollo = CInt(documento.NumeroProtocollo) And (w.Cancellata = False Or w.Cancellata Is Nothing))
+
+                If (mailPartenza.Count > 0) Then
+                    If utenteCollegato.SuperUser Or Not funzioneAbilitata Is Nothing Then
+                        If documento.Conservabile Then
+                            ripristinaMailButton.ImageUrl = "~\images\Delete16.png"
+                            ripristinaMailButton.ToolTip = "Nascondi Registrazione"
+                        Else
+                            ripristinaMailButton.ImageUrl = "~\images\undo.png"
+                            ripristinaMailButton.ToolTip = "Rendi Visibile Registrazione"
+                        End If
+
+                    Else
+                        'non sono un super utente
+                        If documento.Conservabile Then
+                            ripristinaMailButton.ImageUrl = "~\images\Delete16.png"
+                            ripristinaMailButton.ToolTip = "Nascondi Registrazione."
+                        Else
+                            ripristinaMailButton.ImageUrl = "~\images\vuoto.png"
+                            ripristinaMailButton.ToolTip = ""
+                            ripristinaMailButton.Attributes.Add("onclick", "return false;")
+                        End If
+
+                    End If
+                Else
+                    ripristinaMailButton.ImageUrl = "~\images\vuoto.png"
+                    ripristinaMailButton.ToolTip = ""
+                    ripristinaMailButton.Attributes.Add("onclick", "return false;")
+                End If
+
+            End If
+
+        End If
+    End Sub
+
+    Protected Sub ToggleRowSelection(ByVal sender As Object, ByVal e As EventArgs)
+        CType(CType(sender, CheckBox).NamingContainer, GridItem).Selected = CType(sender, CheckBox).Checked
+    End Sub
+
+    Protected Sub ToggleSelectedState(ByVal sender As Object, ByVal e As EventArgs)
+        Dim headerCheckBox As CheckBox = CType(sender, CheckBox)
+        For Each dataItem As GridDataItem In Me.ProtocolliGridView.MasterTableView.Items
+            Dim chk As CheckBox = CType(dataItem.FindControl("SelectCheckBox"), CheckBox)
+            If chk.Enabled Then
+                chk.Checked = headerCheckBox.Checked
+                dataItem.Selected = headerCheckBox.Checked
+            End If
+        Next
+    End Sub
+
+#End Region
+
+#Region "AZIONI PANNELLO FILTRO"
+
+    Private Function GetFiltro() As FiltroProtocolloConservazione
+        Dim filtro As New FiltroProtocolloConservazione
+        filtro.Inviati = Me.chkInviate.Checked
+        filtro.DaInviare = Me.chkDaInviare.Checked
+        filtro.Archiviati = Me.chkArchiviate.Checked
+        'filtro.NonConservabili = Me.chkNonConservabili.Checked
+        filtro.NonConservabili = Me.cmbConservabilita.SelectedValue
+
+        filtro.DataInizio = Me.DataInvioInizioTextBox.SelectedDate 'New Date(2016, 9, 19)
+        filtro.DataFine = Me.DataInvioFineTextBox.SelectedDate
+
+        Return filtro
+    End Function
+
+    Private Function GetAnnoEsercizio() As Integer
+        Dim annoEsercizio As Integer = Now.Year
+        Dim parametri As New ParsecAdmin.ParametriRepository
+        Dim parametro As ParsecAdmin.Parametri = parametri.GetByName("AnnoCorrente", ParsecAdmin.TipoModulo.ATT)
+        If Not parametro Is Nothing Then
+            annoEsercizio = CInt(parametro.Valore)
+        End If
+        parametri.Dispose()
+        Return annoEsercizio
+    End Function
+
+    Private Sub ResettaFiltro()
+
+        For Each col As GridColumn In Me.ProtocolliGridView.MasterTableView.Columns
+            col.CurrentFilterValue = String.Empty
+        Next
+        Me.ProtocolliGridView.MasterTableView.FilterExpression = String.Empty
+
+        chkDaInviare.Checked = True
+        chkArchiviate.Checked = False
+        chkInviate.Checked = False
+        'chkNonConservabili.Checked = False
+        Me.cmbConservabilita.SelectedValue = 1
+
+        Me.DataInvioInizioTextBox.SelectedDate = New Date(Me.GetAnnoEsercizio, 1, 1)
+        Me.DataInvioFineTextBox.SelectedDate = Now
+    End Sub
+
+    Private Sub AggiornaGriglia()
+        Me.ProtocolliConservazione = Nothing
+        Me.ProtocolliGridView.Rebind()
+    End Sub
+
+    Protected Sub FiltraImageButton_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles FiltraImageButton.Click
+        Me.AggiornaGriglia()
+    End Sub
+
+    Protected Sub AnnullaFiltroImageButton_Click(ByVal sender As Object, ByVal e As System.EventArgs) Handles AnnullaFiltroImageButton.Click
+        Me.ResettaFiltro()
+        Me.AggiornaGriglia()
+    End Sub
+
+#End Region
+
+#Region "METODI PRIVATI"
+
+    Private Sub VisualizzaDocumento(ByVal item As Telerik.Web.UI.GridDataItem)
+        Dim idDocumento As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+        Dim documento As ProtocolloConservazione = Me.ProtocolliConservazione.Where(Function(c) c.Id = idDocumento).FirstOrDefault
+        Me.VisualizzaRegistrazione(documento)
+    End Sub
+
+    Private Sub VisualizzaRegistrazione(ByVal documento As ProtocolloConservazione)
+        If Not documento Is Nothing Then
+            'Dim registrazioni As New ParsecPro.RegistrazioniRepository
+            'Dim registrazione As ParsecPro.Registrazione = registrazioni.GetQuery.Where(Function(c) c.Id = documento.Id).FirstOrDefault
+            'registrazioni.Dispose()
+            If Not documento Is Nothing Then
+                Dim pageUrl As String = "~/UI/Protocollo/pages/search/VisualizzaRegistrazionePage.aspx"
+                Dim queryString As New Hashtable
+                queryString.Add("filtro", documento.Id)
+                Dim parametriPagina As New Hashtable
+                parametriPagina.Add("Filtro", documento.Id)
+                ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+                ParsecUtility.Utility.ShowPopup(pageUrl, 940, 510, queryString, False)
+            Else
+                ParsecUtility.Utility.MessageBox("La Registrazione selezionata non esiste!", False)
+            End If
+        End If
+    End Sub
+
+    Private Function GetlimiteNumeroPagineRicerca() As Integer
+        Dim limiteNumeroPAgine As Integer = -1
+        Dim parametri As New ParsecAdmin.ParametriRepository
+        Dim parametro As ParsecAdmin.Parametri = parametri.GetByName("limiteNumeroPaginazioneConservazione", ParsecAdmin.TipoModulo.CSZ)
+        If Not parametro Is Nothing Then
+            limiteNumeroPAgine = CInt(parametro.Valore)
+        End If
+        parametri.Dispose()
+        Return limiteNumeroPAgine
+    End Function
+
+    Protected Sub NoPaging_Click(sender As Object, e As System.EventArgs) Handles NoPaging.Click
+        Dim limitePagine = GetlimiteNumeroPagineRicerca()
+        If (Me.ProtocolliGridView.PageCount > limitePagine) Then
+            ParsecUtility.Utility.MessageBox("Il numero di record risultante dalla ricerca è eccessivo: si prega di raffinare la ricerca!", False)
+            Exit Sub
+        End If
+
+        Me.ProtocolliGridView.AllowPaging = Not Me.ProtocolliGridView.AllowPaging
+        If Me.ProtocolliGridView.AllowPaging Then
+            Me.NoPaging.Text = "Non Paginare"
+            Me.NoPaging.Icon.PrimaryIconUrl = "~/images/Next.png"
+        Else
+            Me.NoPaging.Text = "Paginare"
+            Me.NoPaging.Icon.PrimaryIconUrl = "~/images/Previous.png"
+        End If
+        Me.ProtocolliGridView.Rebind()
+    End Sub
+
+    Private Sub SbloccaProtocollo(ByVal item As Telerik.Web.UI.GridDataItem)
+
+        If Not testaConnessione() Then
+            ParsecUtility.Utility.MessageBox("Connessione col Modulo Archvio non trovata.", False)
+            Exit Sub
+        End If
+
+        Dim cliente As ParsecAdmin.Cliente = ParsecUtility.Applicazione.ClienteCorrente
+        Dim idRegistrazione As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+        Dim documento As ProtocolloConservazione = Me.ProtocolliConservazione.Where(Function(c) c.Id = idRegistrazione).FirstOrDefault
+        Try
+            'Dim registrazioniProtocolloRep As New ParsecPro.RegistrazioniRepository
+            'Dim registrazioneProtocollo = registrazioniProtocolloRep.GetById(idRegistrazione)
+            If (Not documento Is Nothing And documento.IdDocumentoWS.HasValue) Then
+                Dim wsConservazione As New wsConservazione.wsConservazione
+                Dim soapCancellaDocumentoRequest = New wsConservazione.SoapCancellaDocumentoRequest
+                soapCancellaDocumentoRequest.codiceLicenza = cliente.CodLicenza
+                soapCancellaDocumentoRequest.documentoFiltro = New wsConservazione.DocumentoBaseConservazioneFiltro
+                soapCancellaDocumentoRequest.documentoFiltro.idDocumento = documento.IdDocumentoWS
+                Dim soapCancellazioneDocumentoResponse = wsConservazione.cancellaDocumento(soapCancellaDocumentoRequest)
+                updateProtocollo(idRegistrazione, Nothing)
+                Me.infoOperazioneHidden.Value = "Sblocco Registrazione Protocollo avvenuto con successo!"
+                Me.AggiornaGriglia()
+            Else
+                Me.infoOperazioneHidden.Value = "Impossibile effettuare lo Sblocco della Registrazione Protocollo!"
+            End If
+
+        Catch ex As Exception
+            'NIENTE
+            Me.infoOperazioneHidden.Value = "Impossibile effettuare lo Sblocco della Registrazione Protocollo!" & " " & ex.Message
+        End Try
+
+    End Sub
+
+    Private Sub updateProtocollo(ByVal idRegistrazione As Integer, ByVal idDocumentoWS As Integer?)
+        Dim registrazioniProtocolloRep As New ParsecPro.RegistrazioniRepository
+        Dim registrazione = registrazioniProtocolloRep.GetById(idRegistrazione)
+        registrazione.IdDocumentoWS = idDocumentoWS
+        registrazioniProtocolloRep.SaveChanges()
+    End Sub
+
+    Private Sub CancellaDocumentoWS(ByVal idDocumentoWS As Integer, ByVal cliente As ParsecAdmin.Cliente)
+        If (idDocumentoWS > 0) Then
+            Dim wsConservazione As New wsConservazione.wsConservazione
+
+            Dim soapGetDocumentoRequest As New wsConservazione.SoapGetDocumentoRequest
+            soapGetDocumentoRequest.codiceLicenza = cliente.CodLicenza
+            Dim wsFiltroDocumento As New wsConservazione.DocumentoBaseConservazioneFiltro
+            wsFiltroDocumento.idDocumento = idDocumentoWS
+            soapGetDocumentoRequest.documentoFiltro = wsFiltroDocumento
+
+            Dim soapDocumentoBaseResponse = wsConservazione.getDocumento(soapGetDocumentoRequest)
+            If (soapDocumentoBaseResponse.messaggioErrore = "") Then
+                If (soapDocumentoBaseResponse.ListaDocumentiBase(0).idPacchettoVersamento.HasValue) Then
+                    Throw New Exception("Documento già impacchettato: impossibile cancellarlo: " & soapDocumentoBaseResponse.messaggioErrore)
+                Else
+                    Dim soapCancellaDocumentoRequest = New wsConservazione.SoapCancellaDocumentoRequest
+                    soapCancellaDocumentoRequest.codiceLicenza = cliente.CodLicenza
+                    soapCancellaDocumentoRequest.documentoFiltro = wsFiltroDocumento
+                    Dim soapCancellazioneDocumentoResponse = wsConservazione.cancellaDocumento(soapCancellaDocumentoRequest)
+                    If (soapCancellazioneDocumentoResponse.messaggioErrore <> "") Then
+                        Throw New Exception(soapDocumentoBaseResponse.messaggioErrore)
+                    End If
+                End If
+            Else
+                Throw New Exception(soapDocumentoBaseResponse.messaggioErrore)
+            End If
+        Else
+            'Throw New Exception("Documento già Conservato: impossibile cancellarlo!")
+        End If
+
+    End Sub
+
+    Private Function testaConnessione() As Boolean
+        Try
+            Dim wsConservazione As New wsConservazione.wsConservazione
+            Return wsConservazione.isAlive
+        Catch ex As Exception
+            Return False
+        End Try
+    End Function
+
+    Private Sub RipristinaBloccaProtocollo(ByVal item As Telerik.Web.UI.GridDataItem)
+
+        Try
+            Dim idEmail As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+
+            Dim idRegistrazione As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("Id")
+            Dim registrazioneRepository As New ParsecPro.RegistrazioniRepository
+            Dim documento As ParsecPro.Registrazione = registrazioneRepository.GetById(idRegistrazione)
+
+            documento.Conservabile = Not documento.Conservabile
+
+            registrazioneRepository.SaveChanges()
+            registrazioneRepository.Dispose()
+            Me.infoOperazioneHidden.Value = "Operazione avvenuta con successo!"
+            Me.AggiornaGriglia()
+        Catch ex As Exception
+            ParsecUtility.Utility.MessageBox("Riscontrati problemi: " & ex.Message, False)
+        End Try
+
+
+    End Sub
+
+
+#End Region
+
+#Region "CONSERVAZIONE MASSIVA"
+
+    Protected Sub ConservaProtocolliImageButton_Click(sender As Object, e As System.Web.UI.ImageClickEventArgs) Handles ConservaProtocolliImageButton.Click
+
+        If Not testaConnessione() Then
+            ParsecUtility.Utility.MessageBox("Connessione col Modulo Archvio non trovata.", False)
+            Exit Sub
+        End If
+
+        Dim sb As New StringBuilder
+
+        Dim registrazioniProtocolloRep As New ParsecPro.RegistrazioniRepository
+
+        Dim count = Me.ProtocolliGridView.SelectedItems.Count
+        Dim context = RadProgressContext.Current
+        context.PrimaryTotal = count.ToString
+        Dim i As Integer = 0
+
+        Dim cliente As ParsecAdmin.Cliente = ParsecUtility.Applicazione.ClienteCorrente
+
+        Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+
+        Dim getEnteSoapRequest As New wsConservazione.SoapGetEnteConservatoreRequest
+        getEnteSoapRequest.codiceLicenza = cliente.CodLicenza
+        Dim enteConservatoreAttivo = wsConservazioneSoap.getEnteConservatoreAttivo(getEnteSoapRequest)
+        If (enteConservatoreAttivo.messaggioErrore <> String.Empty) Then
+            ParsecUtility.Utility.MessageBox(enteConservatoreAttivo.messaggioErrore, False)
+            Exit Sub
+        End If
+
+        For Each selectedItem As GridDataItem In Me.ProtocolliGridView.SelectedItems
+            i += 1
+            context.PrimaryValue = i.ToString
+
+            Dim percentCompleted = CInt((0.5F + ((100.0F * i) / count)))
+
+            context.PrimaryPercent = percentCompleted.ToString
+
+            If Not Response.IsClientConnected Then
+                Exit For
+            End If
+
+            Dim idSelezionato As Integer = selectedItem.OwnerTableView.DataKeyValues(selectedItem.ItemIndex)("Id")
+
+            Dim registrazioneProtocollo = registrazioniProtocolloRep.GetById(idSelezionato)
+            If (Not registrazioneProtocollo Is Nothing AndAlso Not registrazioneProtocollo.Allegati Is Nothing) Then
+
+                'documneto primario (se esiste) come Documento principale
+                Dim allegatoPrimario = registrazioneProtocollo.Allegati.Where(Function(w) w.IdTipologiaDocumento = 1).FirstOrDefault
+                Dim allegatiPrimariComeAllegatiSecondari As List(Of ParsecPro.Allegato)
+
+                If allegatoPrimario Is Nothing Then
+                    'TROVO IL PRIMO ALLEGATO FIRMATO
+                    allegatoPrimario = registrazioneProtocollo.Allegati.Where(Function(c) Not String.IsNullOrEmpty(c.NomeFileFirmato)).FirstOrDefault
+                    If allegatoPrimario Is Nothing Then
+                        ' non esiste alcun documento primario, quindi prendo il primo dei secondari
+                        allegatoPrimario = registrazioneProtocollo.Allegati.Where(Function(w) w.IdTipologiaDocumento = 0).FirstOrDefault
+                    End If
+                End If
+
+                'i restanti li metto come allegati
+                allegatiPrimariComeAllegatiSecondari = registrazioneProtocollo.Allegati.Where(Function(w) w.Id <> allegatoPrimario.Id).ToList
+
+                Try
+                    Dim errore As Boolean = False
+                    Dim listaIdDocumentiConservati As New List(Of Integer)
+                    Dim documentoConservatoPrimario = Me.conservaAllegato(enteConservatoreAttivo.ListaEntiConservatori(0).algoritmoImpronta.ToUpper, registrazioneProtocollo, allegatoPrimario, cliente, Nothing)
+
+                    If (Not documentoConservatoPrimario Is Nothing) Then
+                        If (documentoConservatoPrimario.messaggioErrore = String.Empty) Then
+                            For Each item In allegatiPrimariComeAllegatiSecondari
+                                Dim allegatoSecondario = Me.conservaAllegato(enteConservatoreAttivo.ListaEntiConservatori(0).algoritmoImpronta.ToUpper, registrazioneProtocollo, item, cliente, documentoConservatoPrimario.ListaDocumentiBase(0).idDocumento)
+                                If (allegatoSecondario.messaggioErrore = "") Then
+                                    listaIdDocumentiConservati.Add(allegatoSecondario.ListaDocumentiBase(0).idDocumento)
+                                Else
+                                    'qualcosa è andato male nei secondari e devo cancellare quelli già mandati al modulo archivio
+                                    errore = True
+                                    For Each idSecondario In listaIdDocumentiConservati
+                                        CancellaDocumentoWS(idSecondario, cliente)
+                                    Next
+                                    CancellaDocumentoWS(documentoConservatoPrimario.ListaDocumentiBase(0).idDocumento, cliente)
+                                    sb.AppendLine("La Registrazione con Numero di Protocollo " & registrazioneProtocollo.NumeroProtocollo & " del " & " " & registrazioneProtocollo.DataImmissione.Value.ToShortDateString & "non è stata inviata per il seguente motivo:" & vbCrLf & allegatoSecondario.messaggioErrore)
+                                    Exit For
+                                End If
+                            Next
+                        Else
+                            sb.AppendLine("La Registrazione con Numero di Protocollo " & registrazioneProtocollo.NumeroProtocollo & " del " & " " & registrazioneProtocollo.DataImmissione.Value.ToShortDateString & "non è stata inviata per il seguente motivo:" & vbCrLf & documentoConservatoPrimario.messaggioErrore)
+                            errore = True
+                        End If
+
+                        If Not errore Then
+                            updateProtocollo(idSelezionato, documentoConservatoPrimario.ListaDocumentiBase(0).idDocumento)
+                        End If
+                    Else
+                        sb.AppendLine("La Registrazione con Numero di Protocollo " & registrazioneProtocollo.NumeroProtocollo & " del " & " " & registrazioneProtocollo.DataImmissione.Value.ToShortDateString & " non è stata inviata per il seguente motivo:" & "il File non esiste!")
+                    End If
+
+                    'If (documentoConservatoPrimario.ListaDocumentiBase(0).idDocumento > 0) Then
+                    '    listaIdDocumentiConservati.Add(documentoConservatoPrimario.ListaDocumentiBase(0).idDocumento)
+
+                    'Else
+                    '    'errore nel primario
+                    '    sb.AppendLine("La Registrazione con Numero di Protocollo " & registrazioneProtocollo.NumeroProtocollo & " del " & " " & registrazioneProtocollo.DataImmissione.Value.ToShortDateString & "non è stata inviata per il seguente motivo:" & vbCrLf & documentoConservatoPrimario.messaggioErrore)
+                    '    errore = True
+                    'End If
+
+                    'If Not errore Then
+                    '    updateProtocollo(idSelezionato, documentoConservatoPrimario.ListaDocumentiBase(0).idDocumento)
+                    'End If
+
+                Catch ex As Exception
+                    sb.AppendLine("La Registrazione con Numero di Protocollo " & registrazioneProtocollo.NumeroProtocollo & " del " & " " & registrazioneProtocollo.DataImmissione.Value.ToShortDateString & "non è stata inviata per il seguente motivo:" & vbCrLf & ex.Message)
+                End Try
+
+            End If
+
+        Next
+
+        context.OperationComplete = True
+
+        If sb.Length = 0 Then
+            Me.infoOperazioneHidden.Value = "Invio al Modulo Archivio concluso con successo!"
+        Else
+            ParsecUtility.Utility.MessageBox(sb.ToString, False)
+        End If
+
+        Me.AggiornaGriglia()
+
+    End Sub
+
+    Private Function conservaAllegato(ByVal algoritmoEnteConservatoreAttivo As String, ByVal registrazioneProtocollo As ParsecPro.Registrazione, ByVal allegato As ParsecPro.Allegato, ByVal cliente As ParsecAdmin.Cliente, ByVal idDocumentoWsPadre As Integer?) As wsConservazione.SoapDocumentoBaseResponse
+
+        Try
+
+            Dim wsConservazioneSoap As New wsConservazione.wsConservazione
+            Dim percorsoRoot As String = ParsecAdmin.WebConfigSettings.GetKey("PathDocumenti")
+
+            Dim pathDownload As String = String.Empty
+            Dim nomefile As String = String.Empty
+
+            If Not String.IsNullOrEmpty(allegato.NomeFileFirmato) Then
+                nomefile = allegato.Id.ToString.PadLeft(9, "0") & "_" & "1".PadLeft(4, "0") & "_" & allegato.NomeFileFirmato
+            Else
+                nomefile = allegato.Id.ToString.PadLeft(9, "0") & "_" & "1".PadLeft(4, "0") & "_" & allegato.NomeFile
+            End If
+
+            pathDownload = percorsoRoot & allegato.PercorsoRelativo & nomefile
+
+            Dim utenteCollegato As ParsecAdmin.Utente = CType(ParsecUtility.Applicazione.UtenteCorrente, ParsecAdmin.Utente)
+
+            If (IO.File.Exists(pathDownload)) Then
+                Dim metaDatoProtocollo As New wsConservazione.MetaDatoProtocollo
+
+                metaDatoProtocollo.FileName = nomefile
+
+
+                If (String.IsNullOrEmpty(registrazioneProtocollo.Note)) Then
+                    metaDatoProtocollo.Informazioni = "Protocollo del " & registrazioneProtocollo.NumeroProtocollo & " del " & registrazioneProtocollo.DataImmissione.Value.ToShortDateString
+                Else
+                    metaDatoProtocollo.Informazioni = registrazioneProtocollo.Note
+                End If
+
+                If String.IsNullOrEmpty(registrazioneProtocollo.Oggetto) Then
+                    metaDatoProtocollo.Oggetto = "OGGETTO MANCANTE"
+                Else
+                    metaDatoProtocollo.Oggetto = registrazioneProtocollo.Oggetto
+                End If
+
+
+
+                metaDatoProtocollo.idDocumentoSep = registrazioneProtocollo.Id
+                metaDatoProtocollo.idModuloSep = 2
+                metaDatoProtocollo.TipoDocumento = "DOC_PROTOCOLLO"
+                metaDatoProtocollo.DataProtocollo = registrazioneProtocollo.DataImmissione
+                metaDatoProtocollo.NumeroProtocollo = registrazioneProtocollo.NumeroProtocollo
+
+                metaDatoProtocollo.tipologiaDocumentoProtocollato = registrazioneProtocollo.DescrizioneTipologiaRegistristrazione.ToUpper
+                If (metaDatoProtocollo.tipologiaDocumentoProtocollato = "PARTENZA" Or metaDatoProtocollo.tipologiaDocumentoProtocollato = "INTERNO") Then
+                    metaDatoProtocollo.destinatarioDocumentoProtocollato = registrazioneProtocollo.ElencoReferentiEsterni
+                    metaDatoProtocollo.mittenteDocumentoProtocollato = registrazioneProtocollo.ElencoReferentiInterni
+                End If
+                If (metaDatoProtocollo.tipologiaDocumentoProtocollato = "ARRIVO") Then
+                    metaDatoProtocollo.destinatarioDocumentoProtocollato = registrazioneProtocollo.ElencoReferentiInterni
+                    metaDatoProtocollo.mittenteDocumentoProtocollato = registrazioneProtocollo.ElencoReferentiEsterni
+                End If
+
+                metaDatoProtocollo.IdDocumentoConservatoPadre = idDocumentoWsPadre
+                metaDatoProtocollo.NumeroDocumento = metaDatoProtocollo.NumeroProtocollo
+                metaDatoProtocollo.DataDocumento = metaDatoProtocollo.DataProtocollo
+
+                metaDatoProtocollo.DataChiusura = Now
+
+                'calcolo impronte
+                Dim fileByte = IO.File.ReadAllBytes(pathDownload)
+                Select Case algoritmoEnteConservatoreAttivo
+                    Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA1
+                        'retBuffer.Add("SHA1", ParsecUtility.Utility.CalcolaHashFromFile("SHA-1", Buffer))
+                        'metaDatoProtocollo.AlgoritmoImpronta = ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA_1
+                        metaDatoProtocollo.ImprontaFile = ParsecUtility.Utility.CalcolaHash(fileByte)
+                        'metaDatoProtocollo.Impronta = BitConverter.ToString(metaDatoProtocollo.ImprontaFile).Replace("-", "")
+
+                        'allegato.Impronta = ParsecUtility.Utility.CalcolaHash(pathDownload)
+                        'allegato.ImprontaEsadecimale = BitConverter.ToString(allegato.Impronta).Replace("-", "")
+                        'Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA_256
+                        'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                    Case ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA256
+                        'retBuffer.Add("SHA-256", ParsecUtility.Utility.CalcolaHashFromFile("SHA-256", Buffer))
+                        'metaDatoProtocollo.AlgoritmoImpronta = ParsecUtility.AlgoritmiImprontaConservazioneEnumeration.SHA_256
+                        metaDatoProtocollo.ImprontaFile = ParsecUtility.Utility.CalcolaHash256(fileByte)
+                        'metaDatoProtocollo.Impronta = BitConverter.ToString(metaDatoProtocollo.ImprontaFile).Replace("-", "")
+                    Case Else
+                        'ParsecCSD.Log4NetSetupLivello.SetupLivelloLog(Log)
+                        'Log.Warn("calcoloImpronta():  non riscontrato alcun Ente Conservatore tra quelli ammessi!")
+                        'Return Nothing
+                        Throw New Exception("Riscontrati problemi: non riscontrato alcun Ente Conservatore tra quelli ammessi oppure algoritmo impronta non valido!")
+                End Select
+                metaDatoProtocollo.AlgoritmoImpronta = algoritmoEnteConservatoreAttivo
+
+                Dim metaDatoProtocolloSoap As New wsConservazione.SoapConservaProtocolloRequest
+                metaDatoProtocolloSoap.codiceLicenza = cliente.CodLicenza
+                metaDatoProtocolloSoap.metaDatoProtocollo = metaDatoProtocollo
+                metaDatoProtocolloSoap.file = Nothing 'IO.File.ReadAllBytes(pathDownload)
+                metaDatoProtocolloSoap.sourcePath = pathDownload
+                wsConservazioneSoap.Dispose()
+                Dim documentoConservato = wsConservazioneSoap.conservaProtocollo(metaDatoProtocolloSoap)
+                If (documentoConservato.messaggioErrore = "") Then
+                    Return documentoConservato
+                End If
+            End If
+        Catch ex As Exception
+            Throw New Exception(ex.Message)
+        End Try
+
+        Return Nothing
+
+    End Function
+
+#End Region
+
+End Class

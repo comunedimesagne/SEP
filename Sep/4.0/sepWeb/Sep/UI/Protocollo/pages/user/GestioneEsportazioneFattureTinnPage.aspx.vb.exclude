@@ -1,0 +1,408 @@
+﻿Imports Telerik.Web.UI
+Imports System.IO
+Imports System.Net
+
+'* SPDX-License-Identifier: GPL-3.0-only
+
+Partial Class GestioneEsportazioneFattureTinnPage
+    Inherits System.Web.UI.Page
+
+    Private WithEvents MainPage As MainPage
+
+#Region "PROPRIETA'"
+
+    'Variabile di Sessione: lista di Oggetti EsportazioneFatturaTINN associati alla Griglia
+    Public Property EsportazioniFattureTINN() As List(Of ParsecPro.EsportazioneFatturaTINN)
+        Get
+            Return CType(Session("GestioneEsportazioneFattureTinnPage_EsportazioniFattureTINN"), List(Of ParsecPro.EsportazioneFatturaTINN))
+        End Get
+        Set(ByVal value As List(Of ParsecPro.EsportazioneFatturaTINN))
+            Session("GestioneEsportazioneFattureTinnPage_EsportazioniFattureTINN") = value
+        End Set
+    End Property
+
+#End Region
+
+#Region "EVENTI PAGINA"
+
+    'Evento Init associato alla Pagina: inizializza la pagina.
+    Protected Sub Page_Init(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.Init
+        Me.MainPage = CType(Me.Master, MainPage)
+        Me.MainPage.NomeModulo = "Protocollo"
+        Me.MainPage.DescrizioneProcedura = "> Esportazione Fatture Elettroniche TINN"
+
+        Dim css As HtmlGenericControl
+        css = New HtmlGenericControl
+        css.TagName = "style"
+        css.Attributes.Add("type", "text/css")
+        css.InnerHtml = "div.RadUploadProgressArea_Office2007 .ruProgress { background-image: none;}" & vbCrLf
+        css.InnerHtml += ".RadUploadProgressArea { width: 320px !important;}" & vbCrLf
+        css.InnerHtml += "div.RadUploadProgressArea li.ruProgressHeader{ margin: 10px 18px 0px; }" & vbCrLf
+        css.InnerHtml += "table.CkeckListCss tr td label {margin-right:10px;padding-right:10px;}" & vbCrLf
+        Me.Page.Header.Controls.Add(css)
+
+
+        If Not Me.Page.IsPostBack Then
+
+            Me.VisualizzaFatturaControl.Visible = False
+
+            Me.EsportazioniFattureTINN = Nothing
+            'Imposto l'ordinamento predefinito.
+            Dim sortExpr As New Telerik.Web.UI.GridSortExpression()
+            sortExpr.FieldName = "DataFattura"
+            sortExpr.SortOrder = Telerik.Web.UI.GridSortOrder.Descending
+            Me.FattureElettronicheGridView.MasterTableView.SortExpressions.AddSortExpression(sortExpr)
+
+        End If
+
+        Me.ChiudiErrorPanelButton.Attributes.Add("onclick", "hideErrorPanel=true;return false;")
+
+        Me.FattureElettronicheGridView.GroupingSettings.CaseSensitive = False
+    End Sub
+
+    'Evento LoadComplete associato alla Pagina: setta il Titolo sulla griglia
+    Protected Sub Page_LoadComplete(ByVal sender As Object, ByVal e As System.EventArgs) Handles Me.LoadComplete
+        'NON E' PAGINATA
+        Me.TitoloElencoFattureLabel.Text = "Elenco Fatture Elettroniche " & If(Me.FattureElettronicheGridView.MasterTableView.Items.Count > 0, "( " & Me.FattureElettronicheGridView.MasterTableView.Items.Count.ToString & " )", "")
+    End Sub
+
+#End Region
+
+#Region "EVENTI GRIGLIA"
+
+    'Evento PreRender associato alla griglia FattureElettronicheGridView. Gestisce i check di selezione multipla.
+    Protected Sub FattureElettronicheGridView_PreRender(sender As Object, e As System.EventArgs) Handles FattureElettronicheGridView.PreRender
+        Dim gridHeaderItems = FattureElettronicheGridView.MasterTableView.GetItems(GridItemType.Header)
+        Dim selectAllCheckBox As CheckBox = CType(CType(gridHeaderItems(0), GridHeaderItem)("SelectCheckBox").Controls(0), CheckBox)
+        'DISABILITO LA CHECKBOX SELEZIONA TUTTO SE NON C'E' NIENTE DA SELEZIONARE
+        If Me.FattureElettronicheGridView.Items.Count = 0 Then
+            selectAllCheckBox.Enabled = False
+        End If
+    End Sub
+
+    'Evento NeedDataSource associato alla griglia FattureElettronicheGridView. Effettua il mapping col datasource di FattureElettronicheGridView. Aggiorna la lista EsportazioniFattureTINN (variabile di sessione).
+    Protected Sub FattureElettronicheGridView_NeedDataSource(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridNeedDataSourceEventArgs) Handles FattureElettronicheGridView.NeedDataSource
+        If Me.EsportazioniFattureTINN Is Nothing Then
+            Dim esportazioniFatture As New ParsecPro.EsportazioneFatturaTINNRepository
+            Me.EsportazioniFattureTINN = esportazioniFatture.Where(Function(c) c.Inviata = False).ToList
+            esportazioniFatture.Dispose()
+        End If
+        Me.FattureElettronicheGridView.DataSource = Me.EsportazioniFattureTINN
+    End Sub
+
+    'Evento ItemCommand associato alla Griglia FattureElettronicheGridView. Esegue i vari comandi associati alla griglia.
+    Protected Sub FattureElettronicheGridView_ItemCommand(sender As Object, e As Telerik.Web.UI.GridCommandEventArgs) Handles FattureElettronicheGridView.ItemCommand
+        If e.CommandName = "Anteprima" Then
+            Me.VisualizzaFattura(e.Item)
+
+        ElseIf e.CommandName = "VisualizzaProtocollo" Then
+            Dim IdFattura As Integer = e.Item.OwnerTableView.DataKeyValues(e.Item.ItemIndex)("IdFattura")
+            Dim fatture As New ParsecPro.FatturaElettronicaRepository
+
+            Dim fattura = fatture.Where(Function(c) c.Id = IdFattura).FirstOrDefault
+            Dim pageUrl As String = "~/UI/Protocollo/pages/search/VisualizzaRegistrazionePage.aspx"
+            Dim parametriPagina As New Hashtable
+            parametriPagina.Add("Filtro", fattura.IdRegistrazione)
+            ParsecUtility.SessionManager.ParametriPagina = parametriPagina
+            ParsecUtility.Utility.ShowPopup(pageUrl, 940, 510, Nothing, False)
+
+        End If
+    End Sub
+
+    'Evento ItemCreated associato alla Griglia FattureElettronicheGridView. Setta i vari stili per gli GridFilteringItem e GridHeaderItem.
+    Protected Sub FattureElettronicheGridView_ItemCreated(ByVal sender As Object, ByVal e As Telerik.Web.UI.GridItemEventArgs) Handles FattureElettronicheGridView.ItemCreated
+
+        If TypeOf e.Item Is GridFilteringItem Then
+            e.Item.Style.Add("position", "relative")
+            e.Item.Style.Add("top", "expression(this.offsetParent.scrollTop-2)")
+            e.Item.Style.Add("z-index", "99")
+            'e.Item.Style.Add("background-color", "White")
+        End If
+
+        If TypeOf e.Item Is GridHeaderItem Then
+            e.Item.Style.Add("position", "relative")
+            e.Item.Style.Add("top", "expression(this.offsetParent.scrollTop-2)")
+            e.Item.Style.Add("z-index", "99")
+            e.Item.Style.Add("background-color", "White")
+        End If
+
+    End Sub
+
+    'Lancia la visualizzazione di una fattura selezioanta nella griglia.
+    Private Sub VisualizzaFattura(ByVal item As Telerik.Web.UI.GridDataItem)
+        Dim IdFattura As Integer = item.OwnerTableView.DataKeyValues(item.ItemIndex)("IdFattura")
+        Dim fatture As New ParsecPro.FatturaElettronicaRepository
+        Dim fattura = fatture.Where(Function(c) c.Id = IdFattura).FirstOrDefault
+        If Not fattura Is Nothing Then
+            Me.VisualizzaFatturaControl.ShowPanel()
+            Me.VisualizzaFatturaControl.InitUI(fattura)
+        End If
+        fatture.Dispose()
+    End Sub
+
+#End Region
+
+#Region "AZIONI PANNELLO FILTRO"
+
+    'Aggiorna la griglia richiamando il rebind della griglia stessa.
+    Private Sub AggiornaGriglia()
+        Me.EsportazioniFattureTINN = Nothing
+        Me.FattureElettronicheGridView.Rebind()
+    End Sub
+
+#End Region
+
+#Region "PROTOCOLLAZIONE MASSIVA"
+
+    'Effetta la protocollazione massiva delle Fatture selezionate nella griglia.
+    Protected Sub ProtocollaFattureSelezionateImageButton_Click(sender As Object, e As System.Web.UI.ImageClickEventArgs) Handles ProtocollaFattureSelezionateImageButton.Click
+        Try
+            If Me.FattureElettronicheGridView.SelectedIndexes.Count = 0 Then
+                ParsecUtility.Utility.MessageBox("E' necessario selezionare almeno una fattura!", False)
+                Exit Sub
+            End If
+
+            Dim riga As String = String.Empty
+
+            Dim password As String = ParsecAdmin.WebConfigSettings.GetKey("FatturaServerPwd")
+            password = ParsecCommon.CryptoUtil.Decrypt(password)
+            Dim user As String = ParsecAdmin.WebConfigSettings.GetKey("FatturaServerUser")
+
+            Dim port As String = ParsecAdmin.WebConfigSettings.GetKey("FatturaServerPort")
+            Dim host As String = ParsecAdmin.WebConfigSettings.GetKey("FatturaServerUrl").Split(New Char() {"//"}, StringSplitOptions.RemoveEmptyEntries)(1)
+            Dim url As String = ParsecAdmin.WebConfigSettings.GetKey("FatturaServerPath")
+            Dim uri As String = String.Format("ftp://{0}:{1}/{2}", host, port.ToString, url)
+
+            'todo parametrizzare
+            Dim nomefileCSV As String = "InterscambioFATTPA.csv"
+            Dim ftpPathCSV As String = uri & "/" & nomefileCSV
+
+            Dim localPathCSV As String = ParsecAdmin.WebConfigSettings.GetKey("PathDownload") & nomefileCSV
+
+            Dim lines As List(Of String) = Nothing
+            If Me.FtpFileExist(user, password, ftpPathCSV) Then
+                Me.DownloadFtpFile(user, password, ftpPathCSV, localPathCSV)
+                lines = File.ReadAllLines(localPathCSV).ToList
+            Else
+                lines = New List(Of String)
+                riga = String.Format("{0};{1};{2};{3};{4};{5};{6}", "Nome File Fatture", "Anno Protocollo", "Numero Protocollo", "Data Prococollo", "Numero Documento Fattura", "Data Documento fattura", "Stato Fattura")
+                lines.Add(riga)
+            End If
+
+            Dim fatture As New ParsecPro.EsportazioneFatturaTINNRepository
+
+            Dim sb As New StringBuilder
+
+            Dim count = Me.FattureElettronicheGridView.SelectedItems.Count
+            Dim context = RadProgressContext.Current
+            context.PrimaryTotal = count.ToString
+
+            Dim i As Integer = 0
+            Dim percentCompleted As Integer = 0
+            Dim fattura As ParsecPro.EsportazioneFatturaTINN = Nothing
+            Dim selectedItem As GridDataItem = Nothing
+            Dim idSelezionato As Integer = 0
+            Dim nomefileFattura = String.Empty
+            Dim isP7M As Boolean = False
+            Dim buffer As Byte() = Nothing
+            Dim bufferXML As Byte() = Nothing
+            Dim localPathXML As String = String.Empty
+            Dim ftpPathXML As String = String.Empty
+            Dim signedCms As System.Security.Cryptography.Pkcs.SignedCms = Nothing
+
+            For j As Integer = 0 To Me.FattureElettronicheGridView.SelectedIndexes.Count - 1
+
+                i += 1
+                context.PrimaryValue = i.ToString
+                percentCompleted = CInt((0.5F + ((100.0F * i) / count)))
+                context.PrimaryPercent = percentCompleted.ToString
+
+                If Not Response.IsClientConnected Then
+                    Exit For
+                End If
+                selectedItem = CType(Me.FattureElettronicheGridView.Items(Me.FattureElettronicheGridView.SelectedIndexes(j)), GridDataItem)
+
+                Try
+                    idSelezionato = selectedItem.OwnerTableView.DataKeyValues(selectedItem.ItemIndex)("Id")
+                    fattura = fatture.Where(Function(c) c.Id = idSelezionato).FirstOrDefault
+
+                    nomefileFattura = fattura.NomeFileFattura
+
+                    If IO.Path.GetExtension(nomefileFattura).ToLower = ".p7m" Then
+                        nomefileFattura = IO.Path.GetFileNameWithoutExtension(nomefileFattura)
+                        isP7M = True
+                    End If
+
+                    riga = String.Format("{0};{1};{2};{3};{4};{5};{6}", nomefileFattura, fattura.AnnoProtocollo, fattura.NumeroProtocollo, fattura.DataProtocollo.Value.ToShortDateString, fattura.NumeroFattura, fattura.DataFattura.Value.ToShortDateString, "0")
+                    lines.Add(riga)
+
+
+                    Dim localPathFattura As String = ParsecAdmin.WebConfigSettings.GetKey("PathFattureElettroniche") & fattura.PercorsoRelativo & fattura.NomeFileFattura
+                    Dim ftpPathFattura = uri & "/" & fattura.NomeFileFattura
+
+                    If Not isP7M Then
+                        Me.UploadFtpFile(user, password, ftpPathFattura, localPathFattura)
+                    Else
+                        'ESTRAGGO L'XML DAL P7M
+                        buffer = IO.File.ReadAllBytes(localPathFattura)
+
+                        signedCms = New System.Security.Cryptography.Pkcs.SignedCms
+                        'SE IL CONTENUTO DEL FILE P7M E' CODIFICATO IN BASE64 LO DECODIFICO
+                        Try
+                            buffer = System.Convert.FromBase64String(System.Text.ASCIIEncoding.Default.GetString(buffer))
+                        Catch ex As Exception
+                            'NIENTE
+                        End Try
+                        signedCms.Decode(buffer)
+
+
+                        bufferXML = signedCms.ContentInfo.Content
+                        localPathXML = ParsecAdmin.WebConfigSettings.GetKey("PathDownload") & nomefileFattura
+                        ftpPathXML = uri & "/" & nomefileFattura
+
+                        'COPIO IL FILE XML NELLA CARTELLA LOCALE
+                        IO.File.WriteAllBytes(localPathXML, bufferXML)
+
+                        'SPOSTO IL FILE XML SUL SERVER FTP
+                        Me.UploadFtpFile(user, password, ftpPathXML, localPathXML)
+
+                        'CANCELLO IL FILE
+                        IO.File.Delete(localPathXML)
+
+                    End If
+
+                    fattura.Inviata = True
+                    fatture.SaveChanges()
+
+                Catch ex As Exception
+                    If sb.Length = 0 Then
+                        sb.AppendLine("<center><span style=""text-align:center;""><b>ELENCO FATTURE NON PROTOCOLLATE</b></span></center></br></br>")
+                    End If
+                    sb.AppendLine("&nbspFattura n. " & fattura.NumeroFattura & "</br>&nbspMOTIVO: " & ex.Message & "</br></br>")
+                End Try
+            Next
+
+            'COPIO IL FILE CSV NELLA CARTELLA LOCALE
+            File.WriteAllLines(localPathCSV, lines)
+
+            'SPOSTO IL FILE CSV SUL SERVER FTP
+            Me.UploadFtpFile(user, password, ftpPathCSV, localPathCSV)
+
+            'CANCELLO IL FILE
+            IO.File.Delete(localPathCSV)
+
+            fatture.Dispose()
+
+            context.OperationComplete = True
+
+            For Each col As GridColumn In Me.FattureElettronicheGridView.MasterTableView.Columns
+                col.CurrentFilterValue = String.Empty
+            Next
+            Me.FattureElettronicheGridView.MasterTableView.FilterExpression = String.Empty
+
+            If sb.Length = 0 Then
+                Me.infoOperazioneHidden.Value = "Elaborazione conclusa con successo!"
+            Else
+                Me.VisualizzaErrorMessageBox(sb.ToString)
+            End If
+
+            Me.AggiornaGriglia()
+
+        Catch ex As Exception
+            If ex.InnerException Is Nothing Then
+                ParsecUtility.Utility.MessageBox(ex.Message, False)
+            Else
+                ParsecUtility.Utility.MessageBox(ex.InnerException.Message, False)
+            End If
+        End Try
+       
+    End Sub
+
+    'Visaulizza il messaggio di errore.
+    Private Sub VisualizzaErrorMessageBox(ByVal contenuto As String)
+        Me.contenutoMessaggio.Text = contenuto
+        Dim sb As New StringBuilder
+        sb.AppendLine("<script>")
+        sb.AppendLine("hideErrorPanel=false;")
+        sb.AppendLine("</script>")
+        ParsecUtility.Utility.RegisterScript(sb, False)
+    End Sub
+
+#End Region
+
+#Region "FTP"
+
+    'Esegue l'upload tramite ftp di una fattura elettronica
+    Private Sub UploadFtpFile(ByVal userName As String, ByVal password As String, ByVal ftpDestinationFilePath As String, ByVal localSourceFilePath As String)
+        Dim request As FtpWebRequest = CreateFtpWebRequest(ftpDestinationFilePath, userName, password, False)
+        Dim buffer As Byte() = IO.File.ReadAllBytes(localSourceFilePath)
+        request.Method = WebRequestMethods.Ftp.UploadFile
+        request.ContentLength = buffer.Length
+        Dim writer As IO.Stream = request.GetRequestStream
+        writer.Write(buffer, 0, buffer.Length)
+        writer.Close()
+    End Sub
+
+    'Esegue il download tramite ftp di una fattura elettronica.
+    Private Sub DownloadFtpFile(ByVal userName As String, ByVal password As String, ByVal ftpDestinationFilePath As String, ByVal localPath As String)
+        Dim request As FtpWebRequest = CreateFtpWebRequest(ftpDestinationFilePath, userName, password, False)
+        request.Method = WebRequestMethods.Ftp.DownloadFile
+        Using resp As FtpWebResponse = DirectCast(request.GetResponse(), FtpWebResponse)
+            Using reader As New StreamReader(resp.GetResponseStream())
+                Using ms As New MemoryStream
+                    reader.BaseStream.CopyTo(ms)
+                    IO.File.WriteAllBytes(localPath, ms.ToArray)
+                End Using
+            End Using
+        End Using
+    End Sub
+
+    'Esegue l'upload tramite ftp di una fattura elettronica
+    Private Sub UploadFtpFile(ByVal userName As String, ByVal password As String, ByVal ftpDestinationFilePath As String, ByVal localSourceFilePath As String, ByVal buffer As Byte())
+        Dim request As FtpWebRequest = CreateFtpWebRequest(ftpDestinationFilePath, userName, password, False)
+        request.Method = WebRequestMethods.Ftp.UploadFile
+        request.ContentLength = buffer.Length
+        Dim writer As IO.Stream = request.GetRequestStream
+        writer.Write(buffer, 0, buffer.Length)
+        writer.Close()
+    End Sub
+
+    'Creo l'Oggetto FtpWebRequest per la connesisone FTP
+    Private Function CreateFtpWebRequest(ByVal ftpDirectoryPath As String, ByVal userName As String, ByVal password As String, ByVal keepAlive As Boolean) As FtpWebRequest
+        Dim request = CType(WebRequest.Create(New Uri(ftpDirectoryPath)), FtpWebRequest)
+        request.Proxy = Nothing
+        request.UsePassive = True
+        request.UseBinary = True
+        request.KeepAlive = keepAlive
+        request.Credentials = New NetworkCredential(userName, password)
+        Return request
+    End Function
+
+    'Verifica la esistenza di un file tramite FTP
+    Private Function FtpFileExist(ByVal userName As String, ByVal password As String, ByVal ftpDestinationFilePath As String) As Boolean
+        Dim request As FtpWebRequest = CreateFtpWebRequest(ftpDestinationFilePath, userName, password, False)
+        request.Method = WebRequestMethods.Ftp.GetFileSize
+        Try
+            Dim response As FtpWebResponse = DirectCast(request.GetResponse(), FtpWebResponse)
+        Catch ex As WebException
+            Dim response As FtpWebResponse = DirectCast(ex.Response, FtpWebResponse)
+            If response.StatusCode = FtpStatusCode.ActionNotTakenFileUnavailable Then
+                Return False
+            End If
+        End Try
+        Return True
+    End Function
+
+#End Region
+
+#Region "EVENTI CONTROLLO VISUALIZZA FATTURA "
+
+    'Chiude il pannellino di visualizzazione di una fattura
+    Protected Sub VisualizzaFatturaControl_OnCloseEvent() Handles VisualizzaFatturaControl.OnCloseEvent
+        Me.VisualizzaFatturaControl.Visible = False
+    End Sub
+
+#End Region
+
+
+End Class
