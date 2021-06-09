@@ -34,6 +34,8 @@ it:
     misureMinimeSicurezza: true
     modelloInteroperabilita: true
   countryExtensionVersion: '0.2'
+  riuso:
+    codiceIPA: c_f152
   piattaforme:
     anpr: false
     cie: false
