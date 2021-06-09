@@ -28,6 +28,8 @@ description:
     shortDescription: Sistema per Enti Pubblici
 developmentStatus: stable
 it:
+  riuso:
+    codiceIPA: c_f152
   conforme:
     gdpr: true
     lineeGuidaDesign: false
