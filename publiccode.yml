@@ -26,6 +26,9 @@ description:
       imprese.Ha una struttura modulare, con numerose funzionalità completamente
       integrate e aperte all’int roperabilità tramite API.
     shortDescription: Sistema per Enti Pubblici
+    screenshots:
+      - >-
+        https://raw.githubusercontent.com/comunedimesagne/SEP/main/Logo%20Parsec.png
 developmentStatus: stable
 it:
   conforme:
