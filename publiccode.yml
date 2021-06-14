@@ -26,18 +26,12 @@ description:
       imprese.Ha una struttura modulare, con numerose funzionalità completamente
       integrate e aperte all’int roperabilità tramite API.
     screenshots:
-      - >-
-        https://raw.githubusercontent.com/comunedimesagne/SEP/main/screen/Atti2.PNG
-      - >-
-        https://raw.githubusercontent.com/comunedimesagne/SEP/main/screen/Atti3.PNG
-      - >-
-        https://raw.githubusercontent.com/comunedimesagne/SEP/main/screen/Protocollo2.PNG
-      - >-
-        https://raw.githubusercontent.com/comunedimesagne/SEP/main/screen/Protocollo3.PNG
-      - >-
-        https://raw.githubusercontent.com/comunedimesagne/SEP/main/screen/ScrivaniaAttiva1.png
-      - >-
-        https://raw.githubusercontent.com/comunedimesagne/SEP/main/screen/ScrivaniaStorico1.png
+      - https://raw.githubusercontent.com/comunedimesagne/SEP/main/screen/Atti2.PNG
+      - https://raw.githubusercontent.com/comunedimesagne/SEP/main/screen/Atti3.PNG
+      - https://raw.githubusercontent.com/comunedimesagne/SEP/main/screen/Protocollo2.PNG
+      - https://raw.githubusercontent.com/comunedimesagne/SEP/main/screen/Protocollo3.PNG
+      - https://raw.githubusercontent.com/comunedimesagne/SEP/main/screen/ScrivaniaAttiva1.png
+      - https://raw.githubusercontent.com/comunedimesagne/SEP/main/screen/ScrivaniaStorico1.png
     shortDescription: Sistema per Enti Pubblici
    developmentStatus: stable
 it:
