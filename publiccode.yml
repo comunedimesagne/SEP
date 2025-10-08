@@ -13,6 +13,7 @@ description:
       - Gestione Delibere
       - Gestione Protocollo Informatico
     genericName: Sistema per Enti Pubblici
+    shortDescription: Sistema per Enti Pubblici
     longDescription: |
       E' la suite applicativa dedicata alle attività di gestione della Pubblica
       Amministrazione di PARSEC 3.26. SEP permette di implementare la
@@ -38,8 +39,7 @@ description:
       - screen/Protocollo3.PNG
       - screen/ScrivaniaAttiva1.png
       - screen/ScrivaniaStorico1.png
-    shortDescription: Sistema per Enti Pubblici
-   developmentStatus: stable
+    developmentStatus: stable
 it:
   conforme:
     gdpr: true
@@ -73,7 +73,7 @@ name: SEP
 platforms:
   - web
   - windows
-releaseDate: '2021-05-04'
+releaseDate: '2025-09-29'
 softwareType: standalone/web
 softwareVersion: '4.0'
 url: 'https://github.com/comunedimesagne/SEP'
