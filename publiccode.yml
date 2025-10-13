@@ -41,6 +41,8 @@ description:
       - screen/ScrivaniaStorico1.png
     developmentStatus: stable
 it:
+  riuso:
+    codiceIPA: c_f152
   conforme:
     gdpr: true
     lineeGuidaDesign: false
