@@ -2,7 +2,7 @@
 # metadata file that makes public software easily discoverable.
 # More info at https://github.com/italia/publiccode.yml
 
-publiccodeYmlVersion: '0.2'
+publiccodeYmlVersion: '0.5'
 categories:
   - document-management
 description:
@@ -39,7 +39,10 @@ description:
       - screen/Protocollo3.PNG
       - screen/ScrivaniaAttiva1.png
       - screen/ScrivaniaStorico1.png
-    developmentStatus: stable
+      
+developmentStatus: stable
+usedBy:
+  - Comune di Mesagne
 it:
   conforme:
     gdpr: true
@@ -55,7 +58,7 @@ it:
     pagopa: false
     spid: false
 legal:
-  license: GPL-3.0-or-later
+  license: GPL-2.0-or-later
 localisation:
   availableLanguages:
     - it
@@ -67,7 +70,7 @@ maintenance:
       phone: '+390832228477'
   contractors:
     - name: Parsec 3.26 srl
-      until: '2022-12-31'
+      until: '2029-12-31'
   type: contract
 name: SEP
 platforms:
